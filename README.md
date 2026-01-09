@@ -77,8 +77,6 @@ Currently, EasyVM is available by building from source.
 
 Contributions are welcome! Whether it's reporting bugs, suggesting features, or submitting pull requests, your input is valued.
 
-- **Community:** Join the discussion on [Discord](https://discord.gg/uxuy3vVtWs).
-
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
