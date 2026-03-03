@@ -3,6 +3,8 @@
 EasyVM is a lightweight virtual machine application for macOS, built on top of Apple's powerful [Virtualization framework](https://developer.apple.com/documentation/virtualization). It allows you to run macOS and Linux virtual machines on Apple Silicon hardware with ease.
 
 > **Note:** The project is functional but currently in an optimization phase.
+>
+> 中文文档: [README.zh-CN.md](README.zh-CN.md)
 
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)](https://www.apple.com/macos)
@@ -10,17 +12,42 @@ EasyVM is a lightweight virtual machine application for macOS, built on top of A
 
 ## Table of Contents
 
+- [Quick Start](#quick-start)
 - [Features](#features)
 - [Architecture](#architecture)
 - [Screenshots](#screenshots)
 - [Prerequisites](#prerequisites)
 - [Installation & Build](#installation--build)
-- [Usage](#usage)
-  - [Running macOS VMs](#running-macos-vms)
-  - [Running Linux VMs](#running-linux-vms)
+- [CLI Usage](#cli-usage)
+- [GUI Usage](#gui-usage)
+- [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [License](#license)
 - [Star History](#star-history)
+
+## Quick Start
+
+If you want to use EasyVM right away, follow this path:
+
+1. Build CLI:
+   ```bash
+   swift build
+   ```
+2. Sign CLI with virtualization entitlement:
+   ```bash
+   codesign --force --sign - \
+     --entitlements EasyVM/EasyVM/EasyVM.entitlements \
+     ./.build/debug/easyvm
+   ```
+3. Create and run a Linux VM bundle:
+   ```bash
+   ./.build/debug/easyvm create demo-linux --os linux --storage /tmp/easyvm --image ~/Downloads/linux-arm64.iso
+   ./.build/debug/easyvm run /tmp/easyvm/demo-linux
+   ```
+4. Stop VM:
+   ```bash
+   ./.build/debug/easyvm stop /tmp/easyvm/demo-linux
+   ```
 
 ## Features
 
@@ -79,7 +106,7 @@ Currently, EasyVM is available by building from source.
 
 ### Optional: Standalone CLI (`easyvm`)
 
-This repository now includes a standalone Swift CLI with:
+This repository includes a standalone Swift CLI with:
 
 - `create`
 - `list`
@@ -112,17 +139,67 @@ codesign --force --sign - \
   ./.build/debug/easyvm
 ```
 
-Example:
+## CLI Usage
+
+### `create`
+
+Create a VM bundle:
+
+```bash
+./.build/debug/easyvm create <name> --os <macOS|linux> [--storage <dir>] [--image <path>] [--cpu <n>] [--memory-gb <n>] [--disk-gb <n>]
+```
+
+Examples:
 
 ```bash
 ./.build/debug/easyvm create demo-linux --os linux --storage /tmp/easyvm
+./.build/debug/easyvm create demo-linux --os linux --storage /tmp/easyvm --image ~/Downloads/linux-arm64.iso --cpu 4 --memory-gb 8 --disk-gb 64
+```
+
+Notes:
+
+- `--image` is typically a Linux ISO path.
+- `macOS` bundles created via CLI are skeleton bundles. Complete installation in GUI flow.
+- `--memory-gb` and `--disk-gb` must be greater than `0`.
+
+### `list`
+
+```bash
 ./.build/debug/easyvm list --storage /tmp/easyvm
+```
+
+### `run`
+
+```bash
 ./.build/debug/easyvm run /tmp/easyvm/demo-linux
+```
+
+Foreground mode:
+
+```bash
+./.build/debug/easyvm run /tmp/easyvm/demo-linux --foreground
+```
+
+macOS recovery mode:
+
+```bash
+./.build/debug/easyvm run /path/to/macos-vm --recovery
+```
+
+### `stop`
+
+```bash
 ./.build/debug/easyvm stop /tmp/easyvm/demo-linux
+./.build/debug/easyvm stop /tmp/easyvm/demo-linux --timeout 30
+```
+
+### `clone`
+
+```bash
 ./.build/debug/easyvm clone /tmp/easyvm/demo-linux /tmp/easyvm/demo-linux-clone
 ```
 
-## Usage
+## GUI Usage
 
 ### Running macOS VMs
 1. Launch EasyVM.
@@ -137,6 +214,19 @@ Example:
 3. Provide an ARM64 Linux ISO. Supported distributions include:
    - **Fedora:** Download the "Fedora 37 aarch64 Live ISO" (or newer) from [Fedora Workstation](https://getfedora.org/en/workstation/download/).
    - **Ubuntu:** Download the "64-bit ARM (ARMv8/AArch64) desktop image" from [Ubuntu Daily Live](https://cdimage.ubuntu.com/focal/daily-live/current/) or [Ubuntu Desktop](https://ubuntu.com/download/desktop).
+
+## Troubleshooting
+
+- `run` fails with permission/entitlement errors:
+  - Re-run `codesign` command on `./.build/debug/easyvm`.
+- `run` says VM already running:
+  - Check process status via `easyvm list`.
+  - Stop with `easyvm stop <vm-path>`.
+- Linux VM fails to boot:
+  - Confirm ISO is ARM64.
+  - Confirm bundle contains `MachineIdentifier` and `NVRAM` files.
+- macOS VM fails from CLI-created bundle:
+  - Expected for fresh skeleton bundle. Open and complete installation in GUI flow.
 
 ## Contributing
 
