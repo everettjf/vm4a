@@ -11,6 +11,7 @@ EasyVM is a lightweight virtual machine application for macOS, built on top of A
 ## Table of Contents
 
 - [Features](#features)
+- [Architecture](#architecture)
 - [Screenshots](#screenshots)
 - [Prerequisites](#prerequisites)
 - [Installation & Build](#installation--build)
@@ -27,6 +28,25 @@ EasyVM is a lightweight virtual machine application for macOS, built on top of A
 - **macOS Guests:** Create and run macOS virtual machines.
 - **Linux Guests:** Create and run Linux virtual machines (ARM64).
 - **Clean UI:** Built with SwiftUI for a modern macOS experience.
+
+## Architecture
+
+EasyVM uses a dual-track structure:
+
+- **App (Xcode):** `EasyVM/EasyVM.xcodeproj` builds the GUI app.
+- **CLI (SwiftPM):** `easyvm` is built from `Package.swift`.
+- **Shared core:** both tracks depend on `EasyVMCore` (`Sources/EasyVMCore`).
+
+Current shared scope:
+
+- VM model load/write (`config.json`, `state.json`)
+- VM configuration building (`VZVirtualMachineConfiguration`)
+- PID/process helpers and VM run loop
+- Disk image provisioning helpers
+
+Bridge layer:
+
+- App-only model types are bridged to core types in `EasyVM/EasyVM/Core/VMKit/Model/CoreBridge.swift`.
 
 ## Screenshots
 
@@ -56,6 +76,51 @@ Currently, EasyVM is available by building from source.
 3. **Build and Run:**
    - Select the `EasyVM` target.
    - Press `Cmd + R` to build and run the application.
+
+### Optional: Standalone CLI (`easyvm`)
+
+This repository now includes a standalone Swift CLI with:
+
+- `create`
+- `list`
+- `run`
+- `stop`
+- `clone`
+
+Implementation note:
+
+- Shared VM core logic lives in the SwiftPM module `EasyVMCore` (`Sources/EasyVMCore`).
+- CLI command wiring lives in `Sources/EasyVMCLI`.
+
+Build the CLI:
+
+```bash
+swift build
+```
+
+Run help:
+
+```bash
+./.build/debug/easyvm --help
+```
+
+Because the CLI directly uses Apple's Virtualization framework, it must be signed with the virtualization entitlement before `run` works:
+
+```bash
+codesign --force --sign - \
+  --entitlements EasyVM/EasyVM/EasyVM.entitlements \
+  ./.build/debug/easyvm
+```
+
+Example:
+
+```bash
+./.build/debug/easyvm create demo-linux --os linux --storage /tmp/easyvm
+./.build/debug/easyvm list --storage /tmp/easyvm
+./.build/debug/easyvm run /tmp/easyvm/demo-linux
+./.build/debug/easyvm stop /tmp/easyvm/demo-linux
+./.build/debug/easyvm clone /tmp/easyvm/demo-linux /tmp/easyvm/demo-linux-clone
+```
 
 ## Usage
 

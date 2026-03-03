@@ -7,6 +7,7 @@
 
 import Foundation
 import Virtualization
+import EasyVMCore
 
 
 #if arch(arm64)
@@ -54,113 +55,27 @@ class VMOSCreatorForLinux: VMOSCreator {
     
     private func setupVirtualMachine(model: VMModel, progress: @escaping (VMOSCreatorProgressInfo) -> Void) async throws {
         return try await withCheckedThrowingContinuation({ continuation in
-            let virtualMachineConfiguration = VZVirtualMachineConfiguration()
-
-            // platform (DIFF)
             do {
-                let platform = VZGenericPlatformConfiguration()
-                
-                // create
-                // Store the machine identifier to disk so you can retrieve it for subsequent boots.
                 let machineIdentifier = VZGenericMachineIdentifier()
                 try machineIdentifier.dataRepresentation.write(to: model.machineIdentifierURL)
-                platform.machineIdentifier = machineIdentifier
-
-                virtualMachineConfiguration.platform = platform
+                _ = try VZEFIVariableStore(creatingVariableStoreAt: model.efiVariableStoreURL)
             } catch {
                 continuation.resume(throwing: error)
                 return
             }
             progress(.info("- Platform OK"))
-            
-            // cpu
-            virtualMachineConfiguration.cpuCount = model.config.cpu.count
-            progress(.info("- CPU OK"))
-            
-            // memory
-            virtualMachineConfiguration.memorySize = model.config.memory.size
-            progress(.info("- Memory OK"))
-            
-            // bootLoader (DIFF)
-            do {
-                let bootloader = VZEFIBootLoader()
-                let efiVariableStore = try VZEFIVariableStore(creatingVariableStoreAt: model.efiVariableStoreURL)
-                bootloader.variableStore = efiVariableStore
-                virtualMachineConfiguration.bootLoader = bootloader
-            } catch {
-                continuation.resume(throwing: error)
-                return
-            }
-            progress(.info("- BootLoader OK"))
-            
-            // graphicsDevices
-            virtualMachineConfiguration.graphicsDevices = model.config.graphicsDevices.map({$0.createConfiguration()})
-            progress(.info("- Graphics Devices OK"))
-            
-            // storageDevices
-            virtualMachineConfiguration.storageDevices = []
-            for item in model.config.storageDevices {
-                let result = item.createConfiguration(rootPath: model.rootPath)
-                switch result {
-                case .failure(let error):
-                    continuation.resume(throwing: VMOSError.regularFailure(error))
-                    return
-                case .success(let configItem):
-                    virtualMachineConfiguration.storageDevices.append(configItem)
-                }
-            }
-            progress(.info("- Storage Devices OK"))
-            
-            // networkDevices
-            virtualMachineConfiguration.networkDevices = model.config.networkDevices.map({$0.createConfiguration()})
-            progress(.info("- Network Devices OK"))
-            
-            // pointingDevices
-            virtualMachineConfiguration.pointingDevices = model.config.pointingDevices.map({$0.createConfiguration()})
-            progress(.info("- Pointing Devices OK"))
-            
-            // audioDevices
-            virtualMachineConfiguration.audioDevices = model.config.audioDevices.map({$0.createConfiguration()})
-            progress(.info("- Audio Devices OK"))
 
-            // keyboards
-            virtualMachineConfiguration.keyboards = [VZUSBKeyboardConfiguration()]
-            
-            // consoleDevices
-            virtualMachineConfiguration.consoleDevices = [createSpiceAgentConsoleDeviceConfiguration()]
-            
-            // directorySharingDevices
-            virtualMachineConfiguration.directorySharingDevices = model.config.directorySharingDevices.compactMap({$0.createConfiguration()})
-            
-            
-            // Validate
-            progress(.info("Begin validate"))
             do {
-                try virtualMachineConfiguration.validate()
+                let configuration = try EasyVMCore.createConfiguration(model: model.toCoreModel())
+                virtualMachine = VZVirtualMachine(configuration: configuration)
             } catch {
                 continuation.resume(throwing: error)
                 return
             }
-            progress(.info("Succeed validate"))
-            
-            // Create
-            progress(.info("Begin create virtual machine instance"))
-            virtualMachine = VZVirtualMachine(configuration: virtualMachineConfiguration)
             progress(.info("Succeed create virtual machine instance"))
 
             continuation.resume(returning: ())
         })
-    }
-    
-    private func createSpiceAgentConsoleDeviceConfiguration() -> VZVirtioConsoleDeviceConfiguration {
-        let consoleDevice = VZVirtioConsoleDeviceConfiguration()
-
-        let spiceAgentPort = VZVirtioConsolePortConfiguration()
-        spiceAgentPort.name = VZSpiceAgentPortAttachment.spiceAgentPortName
-        spiceAgentPort.attachment = VZSpiceAgentPortAttachment()
-        consoleDevice.ports[0] = spiceAgentPort
-
-        return consoleDevice
     }
 }
 

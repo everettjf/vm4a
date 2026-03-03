@@ -1,4 +1,7 @@
 EasyVM/EasyVM.xcodeproj/project.xcworkspace/xcuserdata/
+EasyVM/EasyVM.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
 EasyVM/EasyVM.xcodeproj/xcuserdata/
 EasyVM/EasyVM.xcodeproj/xcshareddata/
 .DS_Store
+.build/
+.swiftpm/

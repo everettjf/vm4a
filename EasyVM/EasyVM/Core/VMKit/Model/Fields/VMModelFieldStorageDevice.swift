@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import Virtualization
 
 #if arch(arm64)
 struct VMModelFieldStorageDevice : Decodable, Encodable, CustomStringConvertible {
@@ -59,30 +58,6 @@ struct VMModelFieldStorageDevice : Decodable, Encodable, CustomStringConvertible
         return VMModelFieldStorageDevice(type: .Block, size: Self.defaultDiskSize(), imagePath: "Disk.img")
     }
     
-    func createConfiguration(rootPath: URL) -> VMOSResult<VZStorageDeviceConfiguration, String> {
-        if self.type == .USB {
-            guard let diskImageAttachment = try? VZDiskImageStorageDeviceAttachment(url: URL(fileURLWithPath: imagePath), readOnly: false) else {
-                return .failure("Failed to create Disk image.")
-            }
-            
-            let disk = VZUSBMassStorageDeviceConfiguration(attachment: diskImageAttachment)
-            return .success(disk)
-        }
-        
-        // create disk
-        let fullPath = rootPath.appending(path: imagePath)
-        let createResult = VMOSHelper.createEmptyDiskImage(filePath: fullPath, size: size)
-        if case let .failure(error) = createResult {
-            return .failure(error)
-        }
-        
-        // attachment
-        guard let diskImageAttachment = try? VZDiskImageStorageDeviceAttachment(url: fullPath, readOnly: false) else {
-            return .failure("Failed to create Disk image.")
-        }
-        let disk = VZVirtioBlockDeviceConfiguration(attachment: diskImageAttachment)
-        return .success(disk)
-    }
 }
 
 #endif

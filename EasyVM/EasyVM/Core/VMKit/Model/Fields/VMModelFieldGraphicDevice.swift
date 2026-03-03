@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import Virtualization
 
 #if arch(arm64)
 struct VMModelFieldGraphicDevice : Decodable, Encodable, CustomStringConvertible {
@@ -37,22 +36,6 @@ struct VMModelFieldGraphicDevice : Decodable, Encodable, CustomStringConvertible
         }
     }
     
-    func createConfiguration() -> VZGraphicsDeviceConfiguration {
-        if self.type == .Virtio {
-            let config = VZVirtioGraphicsDeviceConfiguration()
-            config.scanouts = [
-                VZVirtioGraphicsScanoutConfiguration(widthInPixels: self.width, heightInPixels: self.height)
-            ]
-            return config
-        }
-        
-        let graphicsConfiguration = VZMacGraphicsDeviceConfiguration()
-        graphicsConfiguration.displays = [
-            // We abitrarily choose the resolution of the display to be 1920 x 1200.
-            VZMacGraphicsDisplayConfiguration(widthInPixels: self.width, heightInPixels: self.height, pixelsPerInch: self.pixelsPerInch)
-        ]
-        return graphicsConfiguration
-    }
 }
 
 #endif

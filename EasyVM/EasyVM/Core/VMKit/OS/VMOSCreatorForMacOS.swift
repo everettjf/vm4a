@@ -7,6 +7,7 @@
 
 import Foundation
 import Virtualization
+import EasyVMCore
 
 #if arch(arm64)
 
@@ -95,8 +96,6 @@ class VMOSCreatorForMacOS : VMOSCreator {
     
     private func setupVirtualMachine(model: VMModel, macOSConfigurationRequirements: VZMacOSConfigurationRequirements, progress: @escaping (VMOSCreatorProgressInfo) -> Void) async throws {
         return try await withCheckedThrowingContinuation({ continuation in
-            let virtualMachineConfiguration = VZVirtualMachineConfiguration()
-
             // platform
             do {
                 let macPlatformConfiguration = VZMacPlatformConfiguration()
@@ -110,8 +109,6 @@ class VMOSCreatorForMacOS : VMOSCreator {
                 // can retrieve them for subsequent boots.
                 try macPlatformConfiguration.hardwareModel.dataRepresentation.write(to: model.hardwareModelURL)
                 try macPlatformConfiguration.machineIdentifier.dataRepresentation.write(to: model.machineIdentifierURL)
-                
-                virtualMachineConfiguration.platform = macPlatformConfiguration
             } catch {
                 continuation.resume(throwing: error)
                 return
@@ -119,74 +116,26 @@ class VMOSCreatorForMacOS : VMOSCreator {
             progress(.info("- Platform OK"))
             
             // cpu
-            virtualMachineConfiguration.cpuCount = model.config.cpu.count
-            if virtualMachineConfiguration.cpuCount < macOSConfigurationRequirements.minimumSupportedCPUCount {
+            if model.config.cpu.count < macOSConfigurationRequirements.minimumSupportedCPUCount {
                 continuation.resume(throwing: VMOSError.regularFailure("CPUCount isn't supported by the macOS configuration."))
                 return
             }
             progress(.info("- CPU OK"))
             
             // memory
-            virtualMachineConfiguration.memorySize = model.config.memory.size
-            if virtualMachineConfiguration.memorySize < macOSConfigurationRequirements.minimumSupportedMemorySize {
-                continuation.resume(throwing: VMOSError.regularFailure("memorySize isn't supported by the macOS configuration. required \(virtualMachineConfiguration.memorySize) , minimum \(macOSConfigurationRequirements.minimumSupportedMemorySize)"))
+            if model.config.memory.size < macOSConfigurationRequirements.minimumSupportedMemorySize {
+                continuation.resume(throwing: VMOSError.regularFailure("memorySize isn't supported by the macOS configuration. required \(model.config.memory.size) , minimum \(macOSConfigurationRequirements.minimumSupportedMemorySize)"))
                 return
             }
             progress(.info("- Memory OK"))
-            
-            // bootLoader
-            virtualMachineConfiguration.bootLoader = VZMacOSBootLoader()
-            progress(.info("- BootLoader OK"))
-            
-            // graphicsDevices
-            virtualMachineConfiguration.graphicsDevices = model.config.graphicsDevices.map({$0.createConfiguration()})
-            progress(.info("- Graphics Devices OK"))
-            
-            // storageDevices
-            virtualMachineConfiguration.storageDevices = []
-            for item in model.config.storageDevices {
-                let result = item.createConfiguration(rootPath: model.rootPath)
-                switch result {
-                case .failure(let error):
-                    continuation.resume(throwing: VMOSError.regularFailure(error))
-                    return
-                case .success(let configItem):
-                    virtualMachineConfiguration.storageDevices.append(configItem)
-                }
-            }
-            progress(.info("- Storage Devices OK"))
-            
-            // networkDevices
-            virtualMachineConfiguration.networkDevices = model.config.networkDevices.map({$0.createConfiguration()})
-            progress(.info("- Network Devices OK"))
-            
-            // pointingDevices
-            virtualMachineConfiguration.pointingDevices = model.config.pointingDevices.map({$0.createConfiguration()})
-            progress(.info("- Pointing Devices OK"))
-            
-            // audioDevices
-            virtualMachineConfiguration.audioDevices = model.config.audioDevices.map({$0.createConfiguration()})
-            progress(.info("- Audio Devices OK"))
-            
-            // keyboards
-            virtualMachineConfiguration.keyboards = [VZUSBKeyboardConfiguration()]
-            
-            // directorySharingDevices
-            virtualMachineConfiguration.directorySharingDevices = model.config.directorySharingDevices.compactMap({$0.createConfiguration()})
-            
-            // Validate
-            progress(.info("Begin validate"))
+
             do {
-                try virtualMachineConfiguration.validate()
+                let configuration = try EasyVMCore.createConfiguration(model: model.toCoreModel())
+                virtualMachine = VZVirtualMachine(configuration: configuration)
             } catch {
                 continuation.resume(throwing: error)
                 return
             }
-            progress(.info("Succeed validate"))
-            
-            // Create
-            progress(.info("Begin create virtual machine instance"))
-            virtualMachine = VZVirtualMachine(configuration: virtualMachineConfiguration)
             progress(.info("Succeed create virtual machine instance"))
 
             continuation.resume(returning: ())

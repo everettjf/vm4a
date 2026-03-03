@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import Virtualization
 
 #if arch(arm64)
 
@@ -27,12 +26,6 @@ struct VMModelFieldPointingDevice: Decodable, Encodable, CustomStringConvertible
         return VMModelFieldPointingDevice(type: .USBScreenCoordinatePointing)
     }
     
-    func createConfiguration() -> VZPointingDeviceConfiguration {
-        if self.type == .USBScreenCoordinatePointing {
-            return VZUSBScreenCoordinatePointingDeviceConfiguration()
-        }
-        return VZMacTrackpadConfiguration()
-    }
 }
 
 #endif

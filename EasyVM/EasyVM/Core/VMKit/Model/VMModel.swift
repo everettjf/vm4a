@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftUI
+import EasyVMCore
 
 #if arch(arm64)
 struct VMConfigModel : Decodable, Encodable {
@@ -24,48 +25,21 @@ struct VMConfigModel : Decodable, Encodable {
     let directorySharingDevices: [VMModelFieldDirectorySharingDevice]
     
     static func createWithDefaultValues(osType: VMOSType) -> VMConfigModel {
-        switch osType {
-        case .macOS:
-            return VMConfigModel(
-                type: osType,
-                name: "Easy Virtual Machine (macOS)",
-                remark: "",
-                cpu: VMModelFieldCPU.default(),
-                memory: VMModelFieldMemory.default(),
-                graphicsDevices: [VMModelFieldGraphicDevice.default(osType: osType)],
-                storageDevices: [VMModelFieldStorageDevice.default()],
-                networkDevices: [VMModelFieldNetworkDevice.default()],
-                pointingDevices: [VMModelFieldPointingDevice(type: .USBScreenCoordinatePointing)],
-                audioDevices: [VMModelFieldAudioDevice.default()],
-                directorySharingDevices: []
-            )
-        case .linux:
-            return VMConfigModel(
-                type: osType,
-                name: "Easy Virtual Machine (Linux)",
-                remark: "",
-                cpu: VMModelFieldCPU.default(),
-                memory: VMModelFieldMemory.default(),
-                graphicsDevices: [VMModelFieldGraphicDevice.default(osType: osType)],
-                storageDevices: [VMModelFieldStorageDevice.default()],
-                networkDevices: [VMModelFieldNetworkDevice.default()],
-                pointingDevices: [VMModelFieldPointingDevice(type: .USBScreenCoordinatePointing)],
-                audioDevices: [VMModelFieldAudioDevice.default()],
-                directorySharingDevices: []
-            )
-        }
+        let defaultName = osType == .macOS ? "Easy Virtual Machine (macOS)" : "Easy Virtual Machine (Linux)"
+        let coreConfig = EasyVMCore.VMConfigModel.defaults(
+            osType: osType.toCore(),
+            name: defaultName,
+            cpu: nil,
+            memoryBytes: nil,
+            diskBytes: nil
+        )
+        return .fromCore(coreConfig)
     }
     
     
     func writeConfigToFile(path: URL) -> VMOSResultVoid {
         do {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = .prettyPrinted
-            let data = try encoder.encode(self)
-            guard let content = String(data: data, encoding: .utf8) else {
-                return .failure("failed to parse to utf8")
-            }
-            try content.write(toFile: path.path(percentEncoded: false), atomically: true, encoding: .utf8)
+            try EasyVMCore.writeJSON(toCore(), to: path)
             return .success
         } catch {
             return .failure("\(error)")
@@ -91,13 +65,7 @@ struct VMStateModel : Decodable, Encodable  {
     
     func writeStateToFile(path: URL) -> VMOSResultVoid {
         do {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = .prettyPrinted
-            let data = try encoder.encode(self)
-            guard let content = String(data: data, encoding: .utf8) else {
-                return .failure("failed to parse to utf8")
-            }
-            try content.write(toFile: path.path(percentEncoded: false), atomically: true, encoding: .utf8)
+            try EasyVMCore.writeJSON(toCore(), to: path)
             return .success
         } catch {
             return .failure("\(error)")
@@ -134,9 +102,6 @@ struct VMModel: Identifiable {
     }
     var hardwareModelURL: URL {
         rootPath.appending(path: "HardwareModel")
-    }
-    var diskImageURL: URL {
-        rootPath.appending(path: "diskImagePath")
     }
     var efiVariableStoreURL : URL {
         rootPath.appending(path: "NVRAM")
@@ -176,21 +141,8 @@ struct VMModel: Identifiable {
     
     static func loadConfigFromFile(rootPath: URL) -> VMOSResult<VMModel, String> {
         do {
-            // config is required
-            let configPath = Self.getConfigURL(rootPath: rootPath)
-            let configData = try Data(contentsOf: configPath)
-            let config: VMConfigModel = try JSONDecoder().decode(VMConfigModel.self, from: configData)
-            
-            // state is optional
-            var state = VMStateModel(imagePath: URL(filePath: ""))
-            let statePath = Self.getStateURL(rootPath: rootPath)
-            if let stateData = try? Data(contentsOf: statePath) {
-                if let stateRead: VMStateModel = try? JSONDecoder().decode(VMStateModel.self, from: stateData) {
-                    state = stateRead
-                }
-            }
-
-            let model = VMModel(rootPath: rootPath, state: state, config: config)
+            let coreModel = try EasyVMCore.loadModel(rootPath: rootPath)
+            let model = VMModel(rootPath: rootPath, state: .fromCore(coreModel.state), config: .fromCore(coreModel.config))
             return .success(model)
         } catch {
             return .failure("\(error)")

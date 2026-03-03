@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import Virtualization
 
 #if arch(arm64)
 struct VMModelFieldAudioDevice: Decodable, Encodable, CustomStringConvertible {
@@ -25,31 +24,6 @@ struct VMModelFieldAudioDevice: Decodable, Encodable, CustomStringConvertible {
         return VMModelFieldAudioDevice(type:.InputOutputStream)
     }
     
-    func createConfiguration() -> VZAudioDeviceConfiguration {
-        if type == .InputStream {
-            let audioConfiguration = VZVirtioSoundDeviceConfiguration()
-            let inputStream = VZVirtioSoundDeviceInputStreamConfiguration()
-            inputStream.source = VZHostAudioInputStreamSource()
-            audioConfiguration.streams = [inputStream]
-            return audioConfiguration
-        }
-        
-        if type == .OutputStream {
-            let audioConfiguration = VZVirtioSoundDeviceConfiguration()
-            let outputStream = VZVirtioSoundDeviceOutputStreamConfiguration()
-            outputStream.sink = VZHostAudioOutputStreamSink()
-            audioConfiguration.streams = [outputStream]
-            return audioConfiguration
-        }
-        
-        let audioConfiguration = VZVirtioSoundDeviceConfiguration()
-        let inputStream = VZVirtioSoundDeviceInputStreamConfiguration()
-        inputStream.source = VZHostAudioInputStreamSource()
-        let outputStream = VZVirtioSoundDeviceOutputStreamConfiguration()
-        outputStream.sink = VZHostAudioOutputStreamSink()
-        audioConfiguration.streams = [inputStream, outputStream]
-        return audioConfiguration
-    }
 }
 
 #endif
