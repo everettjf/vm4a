@@ -10,7 +10,6 @@ Usage:
   ./deploy.sh [options]
 
 Options:
-  --tap-repo <owner/repo>  Homebrew tap repository. Default: everettjf/homebrew-tap
   --repo <owner/name>      GitHub source repo. Auto-detected if omitted.
   --only-cli               Publish only CLI formula (skip app/cask build).
   --only-app               Publish only app cask.
@@ -51,10 +50,6 @@ SKIP_TESTS=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --tap-repo)
-      TAP_REPO="${2:-}"
-      shift 2
-      ;;
     --repo)
       GH_REPO="${2:-}"
       shift 2

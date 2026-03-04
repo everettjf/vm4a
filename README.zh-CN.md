@@ -235,7 +235,7 @@ scripts/release_homebrew_tap.sh --version 0.2.0 --only-app --app-dmg /absolute/p
 可以一条命令完成：自动升 patch 版本、构建、发布：
 
 ```bash
-./deploy.sh --tap-repo everettjf/homebrew-tap
+./deploy.sh
 ```
 
 `deploy.sh` 会执行：

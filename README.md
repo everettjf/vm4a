@@ -269,7 +269,7 @@ scripts/release_homebrew_tap.sh --version 0.2.0 --only-app --app-dmg /absolute/p
 You can use one command to bump patch version, build, and publish:
 
 ```bash
-./deploy.sh --tap-repo everettjf/homebrew-tap
+./deploy.sh
 ```
 
 What `deploy.sh` does:
@@ -280,6 +280,13 @@ What `deploy.sh` does:
 4. Builds app with Xcode and packages `EasyVM.dmg`
 5. Commits and pushes `VERSION`
 6. Calls `scripts/release_homebrew_tap.sh` for Homebrew tap publishing
+
+Or publish only one track:
+
+```bash
+./deploy.sh --only-cli
+./deploy.sh --only-app
+```
 
 Version helper scripts (adapted from RepoRead style):
 
