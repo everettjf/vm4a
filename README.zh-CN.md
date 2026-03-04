@@ -20,6 +20,7 @@ EasyVM 是一个基于 Apple [Virtualization framework](https://developer.apple.
 - [CLI 使用](#cli-使用)
 - [GUI 使用](#gui-使用)
 - [常见问题](#常见问题)
+- [Homebrew 发布](#homebrew-发布)
 - [贡献](#贡献)
 - [许可证](#许可证)
 
@@ -193,6 +194,66 @@ macOS 恢复模式：
   - 检查 bundle 下是否存在 `MachineIdentifier` 与 `NVRAM`。
 - CLI 创建的 macOS bundle 直接运行失败：
   - 这是预期，需在 GUI 中完成安装初始化步骤。
+
+## Homebrew 发布
+
+项目提供了一个统一发布脚本，可用于自建 tap：
+
+- CLI：发布到 Formula（`Formula/easyvm.rb`）
+- App：发布到 Cask（`Casks/easyvm.rb`）
+- 支持一个脚本同时发布两个
+
+脚本：
+
+```bash
+scripts/release_homebrew_tap.sh --help
+```
+
+同时发布 CLI + App：
+
+```bash
+scripts/release_homebrew_tap.sh \
+  --version 0.2.0 \
+  --tap-repo everettjf/homebrew-tap \
+  --app-dmg /absolute/path/to/EasyVM.dmg
+```
+
+仅发布 CLI：
+
+```bash
+scripts/release_homebrew_tap.sh --version 0.2.0 --only-cli
+```
+
+仅发布 App：
+
+```bash
+scripts/release_homebrew_tap.sh --version 0.2.0 --only-app --app-dmg /absolute/path/to/EasyVM.dmg
+```
+
+### 自动发布（推荐）
+
+可以一条命令完成：自动升 patch 版本、构建、发布：
+
+```bash
+./deploy.sh --tap-repo everettjf/homebrew-tap
+```
+
+`deploy.sh` 会执行：
+
+1. 运行 `swift test`（可用 `--skip-tests` 跳过）
+2. 自动 bump `VERSION` 的 patch
+3. 构建 CLI（`swift build -c release`）
+4. 用 Xcode 构建 App 并自动打包 `EasyVM.dmg`
+5. 提交并 push `VERSION`
+6. 调用 `scripts/release_homebrew_tap.sh` 更新 tap（formula + cask）
+
+版本脚本（参考 RepoRead 风格，已迁移）：
+
+```bash
+./inc_patch_version.sh
+./inc_minor_version.sh
+./inc_major_version.sh
+```
 
 ## 贡献
 

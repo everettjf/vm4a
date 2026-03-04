@@ -21,6 +21,7 @@ EasyVM is a lightweight virtual machine application for macOS, built on top of A
 - [CLI Usage](#cli-usage)
 - [GUI Usage](#gui-usage)
 - [Troubleshooting](#troubleshooting)
+- [Homebrew Release](#homebrew-release)
 - [Contributing](#contributing)
 - [License](#license)
 - [Star History](#star-history)
@@ -227,6 +228,66 @@ macOS recovery mode:
   - Confirm bundle contains `MachineIdentifier` and `NVRAM` files.
 - macOS VM fails from CLI-created bundle:
   - Expected for fresh skeleton bundle. Open and complete installation in GUI flow.
+
+## Homebrew Release
+
+EasyVM provides a unified release script for self-hosted tap publishing:
+
+- CLI via Formula (`Formula/easyvm.rb`)
+- App via Cask (`Casks/easyvm.rb`)
+- Can publish both in one run
+
+Script:
+
+```bash
+scripts/release_homebrew_tap.sh --help
+```
+
+Publish both CLI + App:
+
+```bash
+scripts/release_homebrew_tap.sh \
+  --version 0.2.0 \
+  --tap-repo everettjf/homebrew-tap \
+  --app-dmg /absolute/path/to/EasyVM.dmg
+```
+
+Publish only CLI:
+
+```bash
+scripts/release_homebrew_tap.sh --version 0.2.0 --only-cli
+```
+
+Publish only App:
+
+```bash
+scripts/release_homebrew_tap.sh --version 0.2.0 --only-app --app-dmg /absolute/path/to/EasyVM.dmg
+```
+
+### Auto Deploy
+
+You can use one command to bump patch version, build, and publish:
+
+```bash
+./deploy.sh --tap-repo everettjf/homebrew-tap
+```
+
+What `deploy.sh` does:
+
+1. Runs `swift test` (unless `--skip-tests`)
+2. Bumps patch version in `VERSION`
+3. Builds CLI (`swift build -c release`)
+4. Builds app with Xcode and packages `EasyVM.dmg`
+5. Commits and pushes `VERSION`
+6. Calls `scripts/release_homebrew_tap.sh` for Homebrew tap publishing
+
+Version helper scripts (adapted from RepoRead style):
+
+```bash
+./inc_patch_version.sh
+./inc_minor_version.sh
+./inc_major_version.sh
+```
 
 ## Contributing
 
