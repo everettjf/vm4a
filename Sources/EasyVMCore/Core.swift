@@ -17,6 +17,99 @@ public enum VMOSType: String, Codable {
     case linux = "linux"
 }
 
+public struct VMModelFieldRosetta: Codable {
+    public let enabled: Bool
+    public let tag: String
+
+    public init(enabled: Bool, tag: String = "rosetta") {
+        self.enabled = enabled
+        self.tag = tag
+    }
+
+    public static func `default`() -> Self { .init(enabled: false) }
+
+    public enum HostAvailability: String, Sendable {
+        case notSupported
+        case notInstalled
+        case installed
+    }
+
+    public static var hostAvailability: HostAvailability {
+        if #available(macOS 13.0, *) {
+            switch VZLinuxRosettaDirectoryShare.availability {
+            case .notSupported:
+                return .notSupported
+            case .notInstalled:
+                return .notInstalled
+            case .installed:
+                return .installed
+            @unknown default:
+                return .notSupported
+            }
+        }
+        return .notSupported
+    }
+}
+
+public struct BridgedNetworkInterfaceInfo: Codable, Sendable {
+    public let identifier: String
+    public let displayName: String?
+
+    public init(identifier: String, displayName: String?) {
+        self.identifier = identifier
+        self.displayName = displayName
+    }
+}
+
+public func availableBridgedInterfaces() -> [BridgedNetworkInterfaceInfo] {
+    VZBridgedNetworkInterface.networkInterfaces.map {
+        .init(identifier: $0.identifier, displayName: $0.localizedDisplayName)
+    }
+}
+
+public struct LinuxImageCatalogEntry: Codable, Sendable {
+    public let id: String
+    public let displayName: String
+    public let url: String
+    public let sha256: String?
+
+    public init(id: String, displayName: String, url: String, sha256: String?) {
+        self.id = id
+        self.displayName = displayName
+        self.url = url
+        self.sha256 = sha256
+    }
+}
+
+public func linuxImageCatalog() -> [LinuxImageCatalogEntry] {
+    [
+        .init(
+            id: "ubuntu-24.04-arm64",
+            displayName: "Ubuntu 24.04 LTS Server (ARM64)",
+            url: "https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04.1-live-server-arm64.iso",
+            sha256: nil
+        ),
+        .init(
+            id: "fedora-40-arm64",
+            displayName: "Fedora 40 Server (ARM64)",
+            url: "https://download.fedoraproject.org/pub/fedora/linux/releases/40/Server/aarch64/iso/Fedora-Server-dvd-aarch64-40-1.14.iso",
+            sha256: nil
+        ),
+        .init(
+            id: "debian-12-arm64",
+            displayName: "Debian 12 (ARM64) DVD",
+            url: "https://cdimage.debian.org/debian-cd/current/arm64/iso-dvd/debian-12.9.0-arm64-DVD-1.iso",
+            sha256: nil
+        ),
+        .init(
+            id: "alpine-3.20-arm64",
+            displayName: "Alpine Linux 3.20 Virt (ARM64)",
+            url: "https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/aarch64/alpine-virt-3.20.3-aarch64.iso",
+            sha256: nil
+        ),
+    ]
+}
+
 public struct VMModelFieldCPU: Codable {
     public let count: Int
 
@@ -133,19 +226,55 @@ public struct VMModelFieldNetworkDevice: Codable {
     }
 
     public let type: DeviceType
+    public let identifier: String?
 
-    public init(type: DeviceType) {
+    public init(type: DeviceType, identifier: String? = nil) {
         self.type = type
+        self.identifier = identifier
     }
 
     public static func `default`() -> Self {
         .init(type: .NAT)
     }
 
-    func createConfiguration() -> VZNetworkDeviceConfiguration {
-        let networkDevice = VZVirtioNetworkDeviceConfiguration()
-        networkDevice.attachment = VZNATNetworkDeviceAttachment()
-        return networkDevice
+    enum CodingKeys: String, CodingKey { case type, identifier }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.type = try c.decode(DeviceType.self, forKey: .type)
+        self.identifier = try c.decodeIfPresent(String.self, forKey: .identifier)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(type, forKey: .type)
+        try c.encodeIfPresent(identifier, forKey: .identifier)
+    }
+
+    func createConfiguration() throws -> VZNetworkDeviceConfiguration? {
+        let dev = VZVirtioNetworkDeviceConfiguration()
+        switch type {
+        case .NAT:
+            dev.attachment = VZNATNetworkDeviceAttachment()
+        case .Bridged:
+            let interfaces = VZBridgedNetworkInterface.networkInterfaces
+            guard !interfaces.isEmpty else {
+                throw EasyVMError.message("No bridged interfaces available. Ensure the CLI is signed with com.apple.vm.networking entitlement.")
+            }
+            let iface: VZBridgedNetworkInterface
+            if let id = identifier, let match = interfaces.first(where: { $0.identifier == id }) {
+                iface = match
+            } else if identifier == nil {
+                iface = interfaces[0]
+            } else {
+                let available = interfaces.map { $0.identifier }.joined(separator: ", ")
+                throw EasyVMError.message("Bridged interface '\(identifier ?? "?")' not found. Available: \(available)")
+            }
+            dev.attachment = VZBridgedNetworkDeviceAttachment(interface: iface)
+        case .FileHandle:
+            return nil
+        }
+        return dev
     }
 }
 
@@ -260,6 +389,9 @@ public struct VMModelFieldDirectorySharingDevice: Codable {
 }
 
 public struct VMConfigModel: Codable {
+    public static let currentSchemaVersion: Int = 1
+
+    public let schemaVersion: Int
     public let type: VMOSType
     public let name: String
     public let remark: String
@@ -271,8 +403,10 @@ public struct VMConfigModel: Codable {
     public let pointingDevices: [VMModelFieldPointingDevice]
     public let audioDevices: [VMModelFieldAudioDevice]
     public let directorySharingDevices: [VMModelFieldDirectorySharingDevice]
+    public let rosetta: VMModelFieldRosetta?
 
     public init(
+        schemaVersion: Int = VMConfigModel.currentSchemaVersion,
         type: VMOSType,
         name: String,
         remark: String,
@@ -283,8 +417,10 @@ public struct VMConfigModel: Codable {
         networkDevices: [VMModelFieldNetworkDevice],
         pointingDevices: [VMModelFieldPointingDevice],
         audioDevices: [VMModelFieldAudioDevice],
-        directorySharingDevices: [VMModelFieldDirectorySharingDevice]
+        directorySharingDevices: [VMModelFieldDirectorySharingDevice],
+        rosetta: VMModelFieldRosetta? = nil
     ) {
+        self.schemaVersion = schemaVersion
         self.type = type
         self.name = name
         self.remark = remark
@@ -296,6 +432,30 @@ public struct VMConfigModel: Codable {
         self.pointingDevices = pointingDevices
         self.audioDevices = audioDevices
         self.directorySharingDevices = directorySharingDevices
+        self.rosetta = rosetta
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion, type, name, remark, cpu, memory
+        case graphicsDevices, storageDevices, networkDevices
+        case pointingDevices, audioDevices, directorySharingDevices, rosetta
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.schemaVersion = (try c.decodeIfPresent(Int.self, forKey: .schemaVersion)) ?? 1
+        self.type = try c.decode(VMOSType.self, forKey: .type)
+        self.name = try c.decode(String.self, forKey: .name)
+        self.remark = (try c.decodeIfPresent(String.self, forKey: .remark)) ?? ""
+        self.cpu = try c.decode(VMModelFieldCPU.self, forKey: .cpu)
+        self.memory = try c.decode(VMModelFieldMemory.self, forKey: .memory)
+        self.graphicsDevices = try c.decode([VMModelFieldGraphicDevice].self, forKey: .graphicsDevices)
+        self.storageDevices = try c.decode([VMModelFieldStorageDevice].self, forKey: .storageDevices)
+        self.networkDevices = try c.decode([VMModelFieldNetworkDevice].self, forKey: .networkDevices)
+        self.pointingDevices = try c.decode([VMModelFieldPointingDevice].self, forKey: .pointingDevices)
+        self.audioDevices = try c.decode([VMModelFieldAudioDevice].self, forKey: .audioDevices)
+        self.directorySharingDevices = try c.decode([VMModelFieldDirectorySharingDevice].self, forKey: .directorySharingDevices)
+        self.rosetta = try c.decodeIfPresent(VMModelFieldRosetta.self, forKey: .rosetta)
     }
 
     public static func defaults(
@@ -502,11 +662,32 @@ public func createConfiguration(model: VMModel) throws -> VZVirtualMachineConfig
     vmConfiguration.memorySize = model.config.memory.size
     vmConfiguration.graphicsDevices = model.config.graphicsDevices.map { $0.createConfiguration() }
     vmConfiguration.storageDevices = try createStorageConfiguration(model: model)
-    vmConfiguration.networkDevices = model.config.networkDevices.map { $0.createConfiguration() }
+    vmConfiguration.networkDevices = try model.config.networkDevices.compactMap { try $0.createConfiguration() }
     vmConfiguration.pointingDevices = model.config.pointingDevices.map { $0.createConfiguration() }
     vmConfiguration.audioDevices = model.config.audioDevices.map { $0.createConfiguration() }
     vmConfiguration.keyboards = [VZUSBKeyboardConfiguration()]
-    vmConfiguration.directorySharingDevices = model.config.directorySharingDevices.compactMap { $0.createConfiguration() }
+
+    var dirShares = model.config.directorySharingDevices.compactMap { $0.createConfiguration() }
+    if let rosetta = model.config.rosetta, rosetta.enabled {
+        if #available(macOS 13.0, *) {
+            switch VZLinuxRosettaDirectoryShare.availability {
+            case .installed:
+                let share = try VZLinuxRosettaDirectoryShare()
+                let dev = VZVirtioFileSystemDeviceConfiguration(tag: rosetta.tag)
+                dev.share = share
+                dirShares.append(dev)
+            case .notInstalled:
+                throw EasyVMError.message("Rosetta is not installed. Run: softwareupdate --install-rosetta --agree-to-license")
+            case .notSupported:
+                throw EasyVMError.message("Rosetta is not supported on this host")
+            @unknown default:
+                throw EasyVMError.message("Rosetta availability is unknown on this host")
+            }
+        } else {
+            throw EasyVMError.message("Rosetta requires macOS 13 or later")
+        }
+    }
+    vmConfiguration.directorySharingDevices = dirShares
 
     try vmConfiguration.validate()
     return vmConfiguration

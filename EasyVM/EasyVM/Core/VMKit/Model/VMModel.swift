@@ -11,10 +11,13 @@ import EasyVMCore
 
 #if arch(arm64)
 struct VMConfigModel : Decodable, Encodable {
+    static let currentSchemaVersion: Int = EasyVMCore.VMConfigModel.currentSchemaVersion
+
+    let schemaVersion: Int
     let type: VMOSType
     let name: String
     let remark: String
-    
+
     let cpu: VMModelFieldCPU
     let memory: VMModelFieldMemory
     let graphicsDevices: [VMModelFieldGraphicDevice]
@@ -23,7 +26,61 @@ struct VMConfigModel : Decodable, Encodable {
     let pointingDevices: [VMModelFieldPointingDevice]
     let audioDevices: [VMModelFieldAudioDevice]
     let directorySharingDevices: [VMModelFieldDirectorySharingDevice]
-    
+    let rosetta: VMModelFieldRosetta?
+
+    init(
+        schemaVersion: Int = VMConfigModel.currentSchemaVersion,
+        type: VMOSType,
+        name: String,
+        remark: String,
+        cpu: VMModelFieldCPU,
+        memory: VMModelFieldMemory,
+        graphicsDevices: [VMModelFieldGraphicDevice],
+        storageDevices: [VMModelFieldStorageDevice],
+        networkDevices: [VMModelFieldNetworkDevice],
+        pointingDevices: [VMModelFieldPointingDevice],
+        audioDevices: [VMModelFieldAudioDevice],
+        directorySharingDevices: [VMModelFieldDirectorySharingDevice],
+        rosetta: VMModelFieldRosetta? = nil
+    ) {
+        self.schemaVersion = schemaVersion
+        self.type = type
+        self.name = name
+        self.remark = remark
+        self.cpu = cpu
+        self.memory = memory
+        self.graphicsDevices = graphicsDevices
+        self.storageDevices = storageDevices
+        self.networkDevices = networkDevices
+        self.pointingDevices = pointingDevices
+        self.audioDevices = audioDevices
+        self.directorySharingDevices = directorySharingDevices
+        self.rosetta = rosetta
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion, type, name, remark, cpu, memory
+        case graphicsDevices, storageDevices, networkDevices
+        case pointingDevices, audioDevices, directorySharingDevices, rosetta
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.schemaVersion = (try c.decodeIfPresent(Int.self, forKey: .schemaVersion)) ?? 1
+        self.type = try c.decode(VMOSType.self, forKey: .type)
+        self.name = try c.decode(String.self, forKey: .name)
+        self.remark = (try c.decodeIfPresent(String.self, forKey: .remark)) ?? ""
+        self.cpu = try c.decode(VMModelFieldCPU.self, forKey: .cpu)
+        self.memory = try c.decode(VMModelFieldMemory.self, forKey: .memory)
+        self.graphicsDevices = try c.decode([VMModelFieldGraphicDevice].self, forKey: .graphicsDevices)
+        self.storageDevices = try c.decode([VMModelFieldStorageDevice].self, forKey: .storageDevices)
+        self.networkDevices = try c.decode([VMModelFieldNetworkDevice].self, forKey: .networkDevices)
+        self.pointingDevices = try c.decode([VMModelFieldPointingDevice].self, forKey: .pointingDevices)
+        self.audioDevices = try c.decode([VMModelFieldAudioDevice].self, forKey: .audioDevices)
+        self.directorySharingDevices = try c.decode([VMModelFieldDirectorySharingDevice].self, forKey: .directorySharingDevices)
+        self.rosetta = try c.decodeIfPresent(VMModelFieldRosetta.self, forKey: .rosetta)
+    }
+
     static func createWithDefaultValues(osType: VMOSType) -> VMConfigModel {
         let defaultName = osType == .macOS ? "Easy Virtual Machine (macOS)" : "Easy Virtual Machine (Linux)"
         let coreConfig = EasyVMCore.VMConfigModel.defaults(

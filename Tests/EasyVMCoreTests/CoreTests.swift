@@ -87,6 +87,64 @@ struct CoreTests {
     }
 
     @Test
+    func decodesLegacyConfigWithoutSchemaVersion() throws {
+        let legacyJSON = """
+        {
+          "type": "linux",
+          "name": "legacy",
+          "remark": "",
+          "cpu": { "count": 2 },
+          "memory": { "size": 2147483648 },
+          "graphicsDevices": [{ "type": "Virtio", "width": 1280, "height": 720, "pixelsPerInch": 0 }],
+          "storageDevices": [{ "type": "Block", "size": 10737418240, "imagePath": "Disk.img" }],
+          "networkDevices": [{ "type": "NAT" }],
+          "pointingDevices": [{ "type": "USBScreenCoordinatePointing" }],
+          "audioDevices": [{ "type": "InputOutputStream" }],
+          "directorySharingDevices": []
+        }
+        """
+        let data = Data(legacyJSON.utf8)
+        let config = try JSONDecoder().decode(VMConfigModel.self, from: data)
+        #expect(config.schemaVersion == 1)
+        #expect(config.rosetta == nil)
+        #expect(config.networkDevices[0].type == .NAT)
+        #expect(config.networkDevices[0].identifier == nil)
+    }
+
+    @Test
+    func bridgedNetworkIdentifierRoundTrips() throws {
+        let config = VMConfigModel(
+            type: .linux,
+            name: "bridge",
+            remark: "",
+            cpu: .init(count: 2),
+            memory: .init(size: 2 * 1024 * 1024 * 1024),
+            graphicsDevices: [.default(osType: .linux)],
+            storageDevices: [.default()],
+            networkDevices: [.init(type: .Bridged, identifier: "en0")],
+            pointingDevices: [.default()],
+            audioDevices: [.default()],
+            directorySharingDevices: [],
+            rosetta: .init(enabled: true)
+        )
+        let data = try JSONEncoder().encode(config)
+        let decoded = try JSONDecoder().decode(VMConfigModel.self, from: data)
+        #expect(decoded.schemaVersion == VMConfigModel.currentSchemaVersion)
+        #expect(decoded.networkDevices[0].type == .Bridged)
+        #expect(decoded.networkDevices[0].identifier == "en0")
+        #expect(decoded.rosetta?.enabled == true)
+        #expect(decoded.rosetta?.tag == "rosetta")
+    }
+
+    @Test
+    func linuxImageCatalogHasEntries() throws {
+        let catalog = linuxImageCatalog()
+        #expect(!catalog.isEmpty)
+        #expect(catalog.allSatisfy { $0.url.hasPrefix("http") })
+        #expect(catalog.allSatisfy { !$0.id.isEmpty })
+    }
+
+    @Test
     func loadModelFallsBackToEmptyStateWhenStateFileMissing() throws {
         let testRoot = URL(fileURLWithPath: NSTemporaryDirectory())
             .appending(path: "easyvm-core-tests-\(UUID().uuidString)", directoryHint: .isDirectory)

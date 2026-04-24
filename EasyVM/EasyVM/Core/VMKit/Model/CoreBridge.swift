@@ -10,6 +10,7 @@ import EasyVMCore
 extension VMConfigModel {
     func toCore() -> EasyVMCore.VMConfigModel {
         EasyVMCore.VMConfigModel(
+            schemaVersion: schemaVersion,
             type: type.toCore(),
             name: name,
             remark: remark,
@@ -17,7 +18,7 @@ extension VMConfigModel {
             memory: .init(size: memory.size),
             graphicsDevices: graphicsDevices.map { .init(type: $0.type.toCore(), width: $0.width, height: $0.height, pixelsPerInch: $0.pixelsPerInch) },
             storageDevices: storageDevices.map { .init(type: $0.type.toCore(), size: $0.size, imagePath: $0.imagePath) },
-            networkDevices: networkDevices.map { .init(type: $0.type.toCore()) },
+            networkDevices: networkDevices.map { .init(type: $0.type.toCore(), identifier: $0.identifier) },
             pointingDevices: pointingDevices.map { .init(type: $0.type.toCore()) },
             audioDevices: audioDevices.map { .init(type: $0.type.toCore()) },
             directorySharingDevices: directorySharingDevices.map {
@@ -27,12 +28,14 @@ extension VMConfigModel {
                         .init(name: $0.name, path: $0.path, readOnly: $0.readOnly)
                     }
                 )
-            }
+            },
+            rosetta: rosetta.map { .init(enabled: $0.enabled, tag: $0.tag) }
         )
     }
 
     static func fromCore(_ value: EasyVMCore.VMConfigModel) -> Self {
         VMConfigModel(
+            schemaVersion: value.schemaVersion,
             type: .fromCore(value.type),
             name: value.name,
             remark: value.remark,
@@ -44,7 +47,7 @@ extension VMConfigModel {
             storageDevices: value.storageDevices.map {
                 .init(type: .fromCore($0.type), size: $0.size, imagePath: $0.imagePath)
             },
-            networkDevices: value.networkDevices.map { .init(type: .fromCore($0.type)) },
+            networkDevices: value.networkDevices.map { .init(type: .fromCore($0.type), identifier: $0.identifier) },
             pointingDevices: value.pointingDevices.map { .init(type: .fromCore($0.type)) },
             audioDevices: value.audioDevices.map { .init(type: .fromCore($0.type)) },
             directorySharingDevices: value.directorySharingDevices.map {
@@ -54,7 +57,8 @@ extension VMConfigModel {
                         .init(name: $0.name, path: $0.path, readOnly: $0.readOnly)
                     }
                 )
-            }
+            },
+            rosetta: value.rosetta.map { .init(enabled: $0.enabled, tag: $0.tag) }
         )
     }
 }

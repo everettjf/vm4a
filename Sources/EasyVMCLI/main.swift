@@ -38,6 +38,8 @@ struct EasyVMCLI: ParsableCommand {
             RunCommand.self,
             StopCommand.self,
             CloneCommand.self,
+            NetworkCommand.self,
+            ImageCommand.self,
             RunWorkerCommand.self
         ]
     )
@@ -67,6 +69,12 @@ struct CreateCommand: ParsableCommand {
     @Option(name: .long, help: "Disk size in GB")
     var diskGB: Int?
 
+    @Option(name: .long, help: "Bridged interface bsdName (enables bridged networking). Use 'easyvm network list' to enumerate.")
+    var bridgedInterface: String?
+
+    @Flag(name: .long, help: "Enable Rosetta translation share (Linux only, macOS 13+).")
+    var rosetta: Bool = false
+
     mutating func run() throws {
         if let cpu, cpu <= 0 {
             throw EasyVMError.message("cpu must be greater than 0")
@@ -83,7 +91,44 @@ struct CreateCommand: ParsableCommand {
         var config = VMConfigModel.defaults(osType: os, name: name, cpu: cpu, memoryBytes: memoryBytes, diskBytes: diskBytes)
         let normalizedImagePath = image.map(normalizePath)
 
+        let network: [VMModelFieldNetworkDevice]
+        if let bridgedInterface {
+            let interfaces = availableBridgedInterfaces()
+            if interfaces.first(where: { $0.identifier == bridgedInterface }) == nil {
+                let available = interfaces.map { $0.identifier }.joined(separator: ", ")
+                throw EasyVMError.message("Bridged interface '\(bridgedInterface)' not found. Available: \(available)")
+            }
+            network = [.init(type: .Bridged, identifier: bridgedInterface)]
+        } else {
+            network = config.networkDevices
+        }
+
+        let rosettaField: VMModelFieldRosetta?
+        if rosetta {
+            if os != .linux {
+                throw EasyVMError.message("--rosetta only applies to Linux guests")
+            }
+            switch VMModelFieldRosetta.hostAvailability {
+            case .notSupported:
+                throw EasyVMError.message("Rosetta is not supported on this host")
+            case .notInstalled:
+                FileHandle.standardError.write(Data("warning: Rosetta is not installed. Install with: softwareupdate --install-rosetta --agree-to-license\n".utf8))
+            case .installed:
+                break
+            }
+            rosettaField = .init(enabled: true)
+        } else {
+            rosettaField = nil
+        }
+
+        let storageDevices: [VMModelFieldStorageDevice]
         if os == .linux, let normalizedImagePath, !normalizedImagePath.isEmpty {
+            storageDevices = config.storageDevices + [.init(type: .USB, size: 0, imagePath: normalizedImagePath)]
+        } else {
+            storageDevices = config.storageDevices
+        }
+
+        if bridgedInterface != nil || rosettaField != nil || storageDevices.count != config.storageDevices.count {
             config = VMConfigModel(
                 type: config.type,
                 name: config.name,
@@ -91,11 +136,12 @@ struct CreateCommand: ParsableCommand {
                 cpu: config.cpu,
                 memory: config.memory,
                 graphicsDevices: config.graphicsDevices,
-                storageDevices: config.storageDevices + [.init(type: .USB, size: 0, imagePath: normalizedImagePath)],
-                networkDevices: config.networkDevices,
+                storageDevices: storageDevices,
+                networkDevices: network,
                 pointingDevices: config.pointingDevices,
                 audioDevices: config.audioDevices,
-                directorySharingDevices: config.directorySharingDevices
+                directorySharingDevices: config.directorySharingDevices,
+                rosetta: rosettaField
             )
         }
 
@@ -308,6 +354,54 @@ struct CloneCommand: ParsableCommand {
         }
 
         print("Cloned VM to \(dst.path())")
+    }
+}
+
+struct NetworkCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "network",
+        abstract: "Inspect host network interfaces",
+        subcommands: [ListBridgedCommand.self],
+        defaultSubcommand: ListBridgedCommand.self
+    )
+}
+
+struct ListBridgedCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "list", abstract: "List bridged interfaces available to VMs")
+
+    mutating func run() throws {
+        let interfaces = availableBridgedInterfaces()
+        if interfaces.isEmpty {
+            print("No bridged interfaces available. Ensure the CLI is signed with com.apple.vm.networking entitlement.")
+            return
+        }
+        for iface in interfaces {
+            if let name = iface.displayName {
+                print("\(iface.identifier)\t\(name)")
+            } else {
+                print(iface.identifier)
+            }
+        }
+    }
+}
+
+struct ImageCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "image",
+        abstract: "Linux image catalog and local operations",
+        subcommands: [ImageListCommand.self],
+        defaultSubcommand: ImageListCommand.self
+    )
+}
+
+struct ImageListCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "list", abstract: "List curated Linux ARM64 images")
+
+    mutating func run() throws {
+        for entry in linuxImageCatalog() {
+            print("\(entry.id)\t\(entry.displayName)")
+            print("  \(entry.url)")
+        }
     }
 }
 
