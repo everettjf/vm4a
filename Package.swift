@@ -9,7 +9,8 @@ let package = Package(
     ],
     products: [
         .library(name: "EasyVMCore", targets: ["EasyVMCore"]),
-        .executable(name: "easyvm", targets: ["easyvm"])
+        .executable(name: "easyvm", targets: ["easyvm"]),
+        .executable(name: "easyvm-guest", targets: ["easyvm-guest"])
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.5.0")
@@ -26,6 +27,11 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ],
             path: "Sources/EasyVMCLI"
+        ),
+        .executableTarget(
+            name: "easyvm-guest",
+            dependencies: ["EasyVMCore"],
+            path: "Sources/EasyVMGuest"
         ),
         .testTarget(
             name: "EasyVMCoreTests",

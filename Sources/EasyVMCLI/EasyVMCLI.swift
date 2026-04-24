@@ -57,6 +57,7 @@ struct EasyVMCLI: AsyncParsableCommand {
             PullCommand.self,
             IPCommand.self,
             SSHCommand.self,
+            AgentCommand.self,
             RunWorkerCommand.self
         ]
     )
@@ -594,6 +595,73 @@ struct SSHCommand: ParsableCommand {
         let cArgs: [UnsafeMutablePointer<CChar>?] = ([exe] + args).map { strdup($0) } + [nil]
         _ = execv(exe, cArgs)
         throw EasyVMError.message("execv failed: \(String(cString: strerror(errno)))")
+    }
+}
+
+struct AgentCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "agent",
+        abstract: "Communicate with the in-guest EasyVMGuest agent (scaffold)",
+        subcommands: [AgentStatusCommand.self, AgentPingCommand.self],
+        defaultSubcommand: AgentStatusCommand.self
+    )
+}
+
+struct AgentStatusCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "status", abstract: "Show last heartbeat from the guest agent")
+
+    @Argument(help: "Path to VM root directory")
+    var vmPath: String
+
+    @Option(name: .long, help: "Output format: text or json")
+    var output: OutputFormat = .text
+
+    mutating func run() throws {
+        let rootURL = URL(fileURLWithPath: vmPath, isDirectory: true)
+        _ = try loadModel(rootPath: rootURL)
+        guard let beat = readGuestAgentHeartbeat(bundleRoot: rootURL) else {
+            FileHandle.standardError.write(Data("No heartbeat found. Guest agent must be running inside the VM and mounting guest-agent/ via virtiofs.\n".utf8))
+            throw ExitCode(4)
+        }
+        switch output {
+        case .json: try writeJSONLine(beat)
+        case .text:
+            print("host:      \(beat.hostname)")
+            print("version:   \(beat.version)")
+            print("uptime_s:  \(Int(beat.uptimeSeconds))")
+            print("timestamp: \(ISO8601DateFormatter().string(from: beat.timestamp))")
+        }
+    }
+}
+
+struct AgentPingCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "ping", abstract: "Send a ping command to the guest agent")
+
+    @Argument(help: "Path to VM root directory")
+    var vmPath: String
+
+    @Option(name: .long, help: "Wait timeout in seconds")
+    var timeout: Int = 10
+
+    mutating func run() throws {
+        let rootURL = URL(fileURLWithPath: vmPath, isDirectory: true)
+        _ = try loadModel(rootPath: rootURL)
+        let command = GuestAgentCommand(kind: .ping)
+        try writeGuestAgentCommand(bundleRoot: rootURL, command: command)
+
+        let deadline = Date().addingTimeInterval(TimeInterval(timeout))
+        while Date() < deadline {
+            if let resp = readGuestAgentResponse(bundleRoot: rootURL, id: command.id) {
+                if resp.ok {
+                    print(resp.output ?? "")
+                    return
+                } else {
+                    throw EasyVMError.message(resp.error ?? "guest agent returned failure")
+                }
+            }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        throw EasyVMError.invalidState("Timed out waiting for guest agent response. Is easyvm-guest running inside the VM?")
     }
 }
 

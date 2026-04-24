@@ -197,6 +197,38 @@ struct CoreTests {
     }
 
     @Test
+    func guestAgentCommandAndHeartbeatRoundTrip() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appending(path: "easyvm-agent-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let command = GuestAgentCommand(kind: .ping, payload: "hello")
+        try writeGuestAgentCommand(bundleRoot: root, command: command)
+        let cmdPath = guestAgentDirectory(bundleRoot: root).appending(path: GuestAgentTag.commandFile)
+        let readBack = try JSONDecoder().decode(GuestAgentCommand.self, from: Data(contentsOf: cmdPath))
+        #expect(readBack.kind == .ping)
+        #expect(readBack.payload == "hello")
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let beat = GuestAgentHeartbeat(
+            timestamp: Date(timeIntervalSince1970: 1_700_000_000),
+            version: "0.1.0",
+            hostname: "test-vm",
+            uptimeSeconds: 42
+        )
+        let beatData = try encoder.encode(beat)
+        try atomicWrite(
+            data: beatData,
+            to: guestAgentDirectory(bundleRoot: root).appending(path: GuestAgentTag.heartbeatFile)
+        )
+        let loaded = readGuestAgentHeartbeat(bundleRoot: root)
+        #expect(loaded?.hostname == "test-vm")
+        #expect(loaded?.version == "0.1.0")
+    }
+
+    @Test
     func parsesDHCPLeasesFormat() throws {
         let text = """
         {
