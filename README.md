@@ -132,11 +132,11 @@ Run help:
 ./.build/debug/easyvm --help
 ```
 
-Because the CLI directly uses Apple's Virtualization framework, it must be signed with the virtualization entitlement before `run` works:
+Because the CLI directly uses Apple's Virtualization framework, it must be signed with the virtualization entitlement before `run` works. The CLI-specific entitlements file (`Sources/EasyVMCLI/EasyVMCLI.entitlements`) also includes `com.apple.vm.networking` for bridged mode:
 
 ```bash
 codesign --force --sign - \
-  --entitlements EasyVM/EasyVM/EasyVM.entitlements \
+  --entitlements Sources/EasyVMCLI/EasyVMCLI.entitlements \
   ./.build/debug/easyvm
 ```
 

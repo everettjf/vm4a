@@ -28,7 +28,20 @@ func bytesFromGB(_ gigabytes: Int, fieldName: String) throws -> UInt64 {
     return bytes
 }
 
-struct EasyVMCLI: ParsableCommand {
+enum OutputFormat: String, ExpressibleByArgument {
+    case text
+    case json
+}
+
+func writeJSONLine<T: Encodable>(_ value: T) throws {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    let data = try encoder.encode(value)
+    FileHandle.standardOutput.write(data)
+    FileHandle.standardOutput.write(Data("\n".utf8))
+}
+
+struct EasyVMCLI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "easyvm",
         abstract: "EasyVM standalone CLI",
@@ -40,6 +53,10 @@ struct EasyVMCLI: ParsableCommand {
             CloneCommand.self,
             NetworkCommand.self,
             ImageCommand.self,
+            PushCommand.self,
+            PullCommand.self,
+            IPCommand.self,
+            SSHCommand.self,
             RunWorkerCommand.self
         ]
     )
@@ -74,6 +91,9 @@ struct CreateCommand: ParsableCommand {
 
     @Flag(name: .long, help: "Enable Rosetta translation share (Linux only, macOS 13+).")
     var rosetta: Bool = false
+
+    @Option(name: .long, help: "Output format: text or json")
+    var output: OutputFormat = .text
 
     mutating func run() throws {
         if let cpu, cpu <= 0 {
@@ -158,11 +178,21 @@ struct CreateCommand: ParsableCommand {
             let machineIdentifier = VZGenericMachineIdentifier()
             try machineIdentifier.dataRepresentation.write(to: model.machineIdentifierURL)
             _ = try VZEFIVariableStore(creatingVariableStoreAt: model.efiVariableStoreURL)
-        } else {
-            print("Created macOS VM skeleton. Complete installation using GUI flow to generate HardwareModel/AuxiliaryStorage.")
         }
 
-        print("Created VM: \(rootPath.path())")
+        switch output {
+        case .json:
+            try writeJSONLine([
+                "path": rootPath.path(),
+                "name": name,
+                "os": os.rawValue,
+            ])
+        case .text:
+            if os == .macOS {
+                print("Created macOS VM skeleton. Complete installation using GUI flow to generate HardwareModel/AuxiliaryStorage.")
+            }
+            print("Created VM: \(rootPath.path())")
+        }
     }
 }
 
@@ -172,6 +202,17 @@ struct ListCommand: ParsableCommand {
     @Option(name: .long, help: "Parent directory that contains VM bundles")
     var storage: String = FileManager.default.currentDirectoryPath
 
+    @Option(name: .long, help: "Output format: text or json")
+    var output: OutputFormat = .text
+
+    struct Row: Encodable {
+        let name: String
+        let os: String
+        let status: String
+        let pid: Int32?
+        let path: String
+    }
+
     mutating func run() throws {
         let storageURL = URL(fileURLWithPath: storage, isDirectory: true)
         let entries = try FileManager.default.contentsOfDirectory(
@@ -180,7 +221,7 @@ struct ListCommand: ParsableCommand {
             options: [.skipsHiddenFiles]
         )
 
-        var found = false
+        var rows: [Row] = []
         for entry in entries {
             guard (try? entry.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
                 continue
@@ -190,20 +231,33 @@ struct ListCommand: ParsableCommand {
                   let model = try? loadModel(rootPath: entry) else {
                 continue
             }
-            found = true
-            let pid = readPID(from: model.runPIDURL)
+            var pid = readPID(from: model.runPIDURL)
             let running = pid.map(isProcessRunning(pid:)) ?? false
             if pid != nil, !running {
                 clearPID(at: model.runPIDURL)
-                print("\(model.config.name)\t\(model.config.type.rawValue)\tstopped\t\(entry.path())")
-            } else {
-                let status = running ? "running(pid:\(pid!))" : "stopped"
-                print("\(model.config.name)\t\(model.config.type.rawValue)\t\(status)\t\(entry.path())")
+                pid = nil
             }
+            rows.append(.init(
+                name: model.config.name,
+                os: model.config.type.rawValue,
+                status: running ? "running" : "stopped",
+                pid: running ? pid : nil,
+                path: entry.path()
+            ))
         }
 
-        if !found {
-            print("No VM bundles found in \(storageURL.path())")
+        switch output {
+        case .json:
+            try writeJSONLine(rows)
+        case .text:
+            if rows.isEmpty {
+                print("No VM bundles found in \(storageURL.path())")
+            } else {
+                for row in rows {
+                    let status = row.status == "running" ? "running(pid:\(row.pid ?? 0))" : "stopped"
+                    print("\(row.name)\t\(row.os)\t\(status)\t\(row.path)")
+                }
+            }
         }
     }
 }
@@ -405,6 +459,132 @@ struct ImageListCommand: ParsableCommand {
     }
 }
 
+struct PushCommand: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "push",
+        abstract: "Push a VM bundle to an OCI-compatible registry",
+        discussion: """
+            Use EASYVM_REGISTRY_USER / EASYVM_REGISTRY_PASSWORD for authenticated registries.
+            Example: easyvm push /tmp/easyvm/demo ghcr.io/youruser/demo:latest
+            """
+    )
+
+    @Argument(help: "Path to VM bundle")
+    var bundlePath: String
+
+    @Argument(help: "Registry reference (e.g. ghcr.io/user/name:tag)")
+    var reference: String
+
+    mutating func run() async throws {
+        let bundle = URL(fileURLWithPath: normalizePath(bundlePath), isDirectory: true)
+        guard FileManager.default.fileExists(atPath: bundle.path(percentEncoded: false)) else {
+            throw EasyVMError.message("Bundle does not exist: \(bundle.path())")
+        }
+        try await ociPush(bundleDir: bundle, reference: reference) { line in
+            print(line)
+        }
+    }
+}
+
+struct PullCommand: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "pull",
+        abstract: "Pull a VM bundle from an OCI-compatible registry"
+    )
+
+    @Argument(help: "Registry reference (e.g. ghcr.io/user/name:tag)")
+    var reference: String
+
+    @Option(name: .long, help: "Parent directory to place the bundle into")
+    var storage: String = FileManager.default.currentDirectoryPath
+
+    mutating func run() async throws {
+        let parent = URL(fileURLWithPath: normalizePath(storage), isDirectory: true)
+        let bundle = try await ociPull(reference: reference, into: parent) { line in
+            print(line)
+        }
+        print("Pulled to \(bundle.path())")
+    }
+}
+
+struct IPCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "ip", abstract: "Resolve VM's IP address (NAT DHCP leases)")
+
+    @Argument(help: "Path to VM root directory")
+    var vmPath: String
+
+    @Option(name: .long, help: "Output format: text or json")
+    var output: OutputFormat = .text
+
+    struct Row: Encodable {
+        let ip: String
+        let mac: String
+        let name: String?
+    }
+
+    mutating func run() throws {
+        let rootURL = URL(fileURLWithPath: vmPath, isDirectory: true)
+        let model = try loadModel(rootPath: rootURL)
+        let leases = findLeasesForBundle(model)
+        let rows = leases.map { Row(ip: $0.ipAddress, mac: $0.hardwareAddress, name: $0.name) }
+        switch output {
+        case .json:
+            try writeJSONLine(rows)
+        case .text:
+            if rows.isEmpty {
+                FileHandle.standardError.write(Data("No DHCP lease found for \(model.config.name). VM may not be running or may use bridged networking (try arp -an).\n".utf8))
+                throw ExitCode(1)
+            }
+            for row in rows {
+                if let name = row.name {
+                    print("\(row.ip)\t\(row.mac)\t\(name)")
+                } else {
+                    print("\(row.ip)\t\(row.mac)")
+                }
+            }
+        }
+    }
+}
+
+struct SSHCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "ssh",
+        abstract: "SSH into a running VM via its NAT DHCP lease"
+    )
+
+    @Argument(help: "Path to VM root directory")
+    var vmPath: String
+
+    @Option(name: .long, help: "Login user")
+    var user: String = NSUserName()
+
+    @Option(name: .long, help: "Override target IP")
+    var host: String?
+
+    @Argument(parsing: .captureForPassthrough, help: "Extra arguments passed to ssh")
+    var extra: [String] = []
+
+    mutating func run() throws {
+        let rootURL = URL(fileURLWithPath: vmPath, isDirectory: true)
+        let model = try loadModel(rootPath: rootURL)
+        let target: String
+        if let host { target = host }
+        else {
+            let leases = findLeasesForBundle(model)
+            guard let lease = leases.first else {
+                throw EasyVMError.message("No DHCP lease found for \(model.config.name); pass --host <ip> if bridged.")
+            }
+            target = lease.ipAddress
+        }
+        let args = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "\(user)@\(target)"] + extra
+        let exe = "/usr/bin/ssh"
+        FileHandle.standardError.write(Data("easyvm: exec \(exe) \(args.joined(separator: " "))\n".utf8))
+        let cArgs: [UnsafeMutablePointer<CChar>?] = ([exe] + args).map { strdup($0) } + [nil]
+        _ = execv(exe, cArgs)
+        throw EasyVMError.message("execv failed: \(String(cString: strerror(errno)))")
+    }
+}
+
 struct RunWorkerCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "_run-worker",
@@ -426,4 +606,9 @@ struct RunWorkerCommand: ParsableCommand {
     }
 }
 
-EasyVMCLI.main()
+@main
+struct EasyVMEntrypoint {
+    static func main() async {
+        await EasyVMCLI.main()
+    }
+}

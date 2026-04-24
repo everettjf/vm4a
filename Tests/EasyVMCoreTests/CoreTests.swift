@@ -145,6 +145,53 @@ struct CoreTests {
     }
 
     @Test
+    func ociReferenceParserAcceptsCommonForms() throws {
+        let a = try OCIReference.parse("ghcr.io/foo/bar:v1")
+        #expect(a.registry == "ghcr.io")
+        #expect(a.repository == "foo/bar")
+        #expect(a.tag == "v1")
+
+        let b = try OCIReference.parse("registry.example.com/team/project")
+        #expect(b.tag == "latest")
+        #expect(b.repository == "team/project")
+
+        let c = try OCIReference.parse("localhost:5000/x/y:z")
+        #expect(c.registry == "localhost:5000")
+        #expect(c.repository == "x/y")
+        #expect(c.tag == "z")
+    }
+
+    @Test
+    func ociReferenceParserRejectsShortForms() throws {
+        #expect(throws: (any Error).self) { _ = try OCIReference.parse("justname") }
+        #expect(throws: (any Error).self) { _ = try OCIReference.parse("nohost/repo:tag") }
+    }
+
+    @Test
+    func parsesDHCPLeasesFormat() throws {
+        let text = """
+        {
+        \tname=demo
+        \tip_address=192.168.64.12
+        \thw_address=1,52:54:0:ab:cd:ef
+        \tidentifier=1,52:54:0:ab:cd:ef
+        \tlease=0x6500abcd
+        }
+        {
+        \tname=other
+        \tip_address=192.168.64.13
+        \thw_address=1,aa:bb:cc:dd:ee:ff
+        }
+        """
+        let leases = parseDHCPLeases(text)
+        #expect(leases.count == 2)
+        #expect(leases[0].ipAddress == "192.168.64.12")
+        #expect(leases[0].hardwareAddress == "52:54:00:AB:CD:EF")
+        #expect(leases[0].name == "demo")
+        #expect(leases[1].name == "other")
+    }
+
+    @Test
     func loadModelFallsBackToEmptyStateWhenStateFileMissing() throws {
         let testRoot = URL(fileURLWithPath: NSTemporaryDirectory())
             .appending(path: "easyvm-core-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
