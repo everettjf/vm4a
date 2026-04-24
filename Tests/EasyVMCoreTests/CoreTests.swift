@@ -145,6 +145,35 @@ struct CoreTests {
     }
 
     @Test
+    func typedErrorsExposeDistinctExitCodes() throws {
+        #expect(EasyVMError.notFound("x").exitCode == 2)
+        #expect(EasyVMError.alreadyExists("x").exitCode == 3)
+        #expect(EasyVMError.invalidState("x").exitCode == 4)
+        #expect(EasyVMError.hostUnsupported("x").exitCode == 5)
+        #expect(EasyVMError.rosettaNotInstalled.exitCode == 5)
+        #expect(EasyVMError.message("x").exitCode == 1)
+    }
+
+    @Test
+    func cloneDirectoryPreservesContentsAndBlocksExisting() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appending(path: "easyvm-clone-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let src = root.appending(path: "src", directoryHint: .isDirectory)
+        let dst = root.appending(path: "dst", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: src, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let payload = Data("hello".utf8)
+        try payload.write(to: src.appending(path: "file.txt"))
+
+        _ = try cloneDirectory(from: src, to: dst)
+        let readBack = try Data(contentsOf: dst.appending(path: "file.txt"))
+        #expect(readBack == payload)
+
+        #expect(throws: (any Error).self) { _ = try cloneDirectory(from: src, to: dst) }
+    }
+
+    @Test
     func ociReferenceParserAcceptsCommonForms() throws {
         let a = try OCIReference.parse("ghcr.io/foo/bar:v1")
         #expect(a.registry == "ghcr.io")

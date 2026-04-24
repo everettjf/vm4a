@@ -274,19 +274,29 @@ struct RunCommand: ParsableCommand {
     @Flag(name: .long, help: "Run in foreground")
     var foreground = false
 
+    @Option(name: .long, help: "Restore VM state from .vzstate file before starting (macOS 14+)")
+    var restore: String?
+
+    @Option(name: .long, help: "Save VM state to this path when stopping (macOS 14+)")
+    var saveOnStop: String?
+
     mutating func run() throws {
         let rootURL = URL(fileURLWithPath: vmPath, isDirectory: true)
         let model = try loadModel(rootPath: rootURL)
 
         if let pid = readPID(from: model.runPIDURL), isProcessRunning(pid: pid) {
-            throw EasyVMError.message("VM is already running (pid \(pid))")
+            throw EasyVMError.invalidState("VM is already running (pid \(pid))")
         }
         clearPID(at: model.runPIDURL)
+
+        let restoreURL = restore.map { URL(fileURLWithPath: normalizePath($0)) }
+        let saveURL = saveOnStop.map { URL(fileURLWithPath: normalizePath($0)) }
+        let runOptions = RunOptions(recoveryMode: recovery, restoreStateAt: restoreURL, saveStateOnStopAt: saveURL)
 
         if foreground {
             try writePID(getpid(), to: model.runPIDURL)
             defer { clearPID(at: model.runPIDURL) }
-            try runVM(model: model, recoveryMode: recovery)
+            try runVM(model: model, options: runOptions)
             return
         }
 
@@ -298,9 +308,14 @@ struct RunCommand: ParsableCommand {
         let logHandle = try FileHandle(forWritingTo: model.runLogURL)
         try logHandle.truncate(atOffset: 0)
 
+        var workerArgs: [String] = ["_run-worker", vmPath]
+        if recovery { workerArgs.append("--recovery") }
+        if let r = restore { workerArgs += ["--restore", normalizePath(r)] }
+        if let s = saveOnStop { workerArgs += ["--save-on-stop", normalizePath(s)] }
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = ["_run-worker", vmPath] + (recovery ? ["--recovery"] : [])
+        process.arguments = workerArgs
 
         let null = FileHandle.nullDevice
         process.standardInput = null
@@ -388,15 +403,12 @@ struct CloneCommand: ParsableCommand {
         let dst = URL(fileURLWithPath: destinationPath, isDirectory: true)
 
         guard FileManager.default.fileExists(atPath: src.path(percentEncoded: false)) else {
-            throw EasyVMError.message("Source VM does not exist: \(src.path())")
+            throw EasyVMError.notFound("Source VM: \(src.path())")
         }
-        guard !FileManager.default.fileExists(atPath: dst.path(percentEncoded: false)) else {
-            throw EasyVMError.message("Destination already exists: \(dst.path())")
-        }
-
-        try FileManager.default.copyItem(at: src, to: dst)
+        let viaClone = try cloneDirectory(from: src, to: dst)
         let model = try loadModel(rootPath: dst)
         clearPID(at: model.runPIDURL)
+        try? FileManager.default.removeItem(at: model.runLogURL)
 
         switch model.config.type {
         case .linux:
@@ -407,7 +419,7 @@ struct CloneCommand: ParsableCommand {
             try newIdentifier.dataRepresentation.write(to: model.machineIdentifierURL)
         }
 
-        print("Cloned VM to \(dst.path())")
+        print("Cloned VM to \(dst.path()) \(viaClone ? "(APFS clonefile)" : "(byte copy)")")
     }
 }
 
@@ -597,12 +609,20 @@ struct RunWorkerCommand: ParsableCommand {
     @Flag(name: .long, help: "Start macOS VM in recovery mode")
     var recovery = false
 
+    @Option(name: .long, help: "Restore VM state from this path before starting")
+    var restore: String?
+
+    @Option(name: .long, help: "Save VM state to this path when stopping")
+    var saveOnStop: String?
+
     mutating func run() throws {
         let rootURL = URL(fileURLWithPath: vmPath, isDirectory: true)
         let model = try loadModel(rootPath: rootURL)
         try writePID(getpid(), to: model.runPIDURL)
         defer { clearPID(at: model.runPIDURL) }
-        try runVM(model: model, recoveryMode: recovery)
+        let restoreURL = restore.map { URL(fileURLWithPath: normalizePath($0)) }
+        let saveURL = saveOnStop.map { URL(fileURLWithPath: normalizePath($0)) }
+        try runVM(model: model, options: RunOptions(recoveryMode: recovery, restoreStateAt: restoreURL, saveStateOnStopAt: saveURL))
     }
 }
 

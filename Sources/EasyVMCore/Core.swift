@@ -1,18 +1,38 @@
 import Foundation
-import Virtualization
+@preconcurrency import Virtualization
 
 public enum EasyVMError: Error, CustomStringConvertible {
     case message(String)
+    case notFound(String)
+    case alreadyExists(String)
+    case invalidState(String)
+    case hostUnsupported(String)
+    case rosettaNotInstalled
 
     public var description: String {
         switch self {
-        case .message(let text):
-            return text
+        case .message(let text): return text
+        case .notFound(let what): return "Not found: \(what)"
+        case .alreadyExists(let what): return "Already exists: \(what)"
+        case .invalidState(let text): return "Invalid state: \(text)"
+        case .hostUnsupported(let what): return "Host unsupported: \(what)"
+        case .rosettaNotInstalled:
+            return "Rosetta is not installed. Run: softwareupdate --install-rosetta --agree-to-license"
+        }
+    }
+
+    public var exitCode: Int32 {
+        switch self {
+        case .notFound: return 2
+        case .alreadyExists: return 3
+        case .invalidState: return 4
+        case .hostUnsupported, .rosettaNotInstalled: return 5
+        case .message: return 1
         }
     }
 }
 
-public enum VMOSType: String, Codable {
+public enum VMOSType: String, Codable, Sendable {
     case macOS = "macOS"
     case linux = "linux"
 }
@@ -562,6 +582,33 @@ public func loadModel(rootPath: URL) throws -> VMModel {
     return VMModel(rootPath: rootPath, config: config, state: state)
 }
 
+func makeAppendOnlySerialAttachment(fileURL: URL) throws -> VZFileHandleSerialPortAttachment {
+    if !FileManager.default.fileExists(atPath: fileURL.path(percentEncoded: false)) {
+        FileManager.default.createFile(atPath: fileURL.path(percentEncoded: false), contents: nil)
+    }
+    let handle = try FileHandle(forWritingTo: fileURL)
+    try handle.seekToEnd()
+    return VZFileHandleSerialPortAttachment(fileHandleForReading: nil, fileHandleForWriting: handle)
+}
+
+/// Fast directory copy using APFS clonefile(2) when possible, with a
+/// FileManager fallback for cross-volume copies. Returns `true` when
+/// the destination was created via clonefile, `false` via byte copy.
+@discardableResult
+public func cloneDirectory(from src: URL, to dst: URL) throws -> Bool {
+    if FileManager.default.fileExists(atPath: dst.path(percentEncoded: false)) {
+        throw EasyVMError.alreadyExists(dst.path())
+    }
+    let rc = clonefile(
+        src.path(percentEncoded: false),
+        dst.path(percentEncoded: false),
+        0
+    )
+    if rc == 0 { return true }
+    try FileManager.default.copyItem(at: src, to: dst)
+    return false
+}
+
 public func createEmptyDiskImage(filePath: URL, size: UInt64) throws {
     let fd = open(filePath.path(percentEncoded: false), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR)
     guard fd != -1 else {
@@ -656,7 +703,17 @@ public func createConfiguration(model: VMModel) throws -> VZVirtualMachineConfig
         spicePort.attachment = VZSpiceAgentPortAttachment()
         consoleDevice.ports[0] = spicePort
         vmConfiguration.consoleDevices = [consoleDevice]
+
+        let consoleLogURL = model.rootPath.appending(path: "console.log")
+        if let attachment = try? makeAppendOnlySerialAttachment(fileURL: consoleLogURL) {
+            let serial = VZVirtioConsoleDeviceSerialPortConfiguration()
+            serial.attachment = attachment
+            vmConfiguration.serialPorts = [serial]
+        }
     }
+
+    vmConfiguration.memoryBalloonDevices = [VZVirtioTraditionalMemoryBalloonDeviceConfiguration()]
+    vmConfiguration.entropyDevices = [VZVirtioEntropyDeviceConfiguration()]
 
     vmConfiguration.cpuCount = model.config.cpu.count
     vmConfiguration.memorySize = model.config.memory.size
@@ -734,82 +791,136 @@ public func clearPID(at url: URL) {
 }
 
 final class VMDelegate: NSObject, VZVirtualMachineDelegate {
-    nonisolated(unsafe) var didStop = false
-    nonisolated(unsafe) var stopError: Error?
+    let onStop: @Sendable (Error?) -> Void
 
-    nonisolated func guestDidStop(_ virtualMachine: VZVirtualMachine) {
-        didStop = true
+    init(onStop: @escaping @Sendable (Error?) -> Void) {
+        self.onStop = onStop
     }
 
-    nonisolated func virtualMachine(_ virtualMachine: VZVirtualMachine, didStopWithError error: Error) {
-        didStop = true
-        stopError = error
+    func guestDidStop(_ virtualMachine: VZVirtualMachine) {
+        onStop(nil)
+    }
+
+    func virtualMachine(_ virtualMachine: VZVirtualMachine, didStopWithError error: Error) {
+        onStop(error)
     }
 }
 
-nonisolated(unsafe) private var stopRequestedFlag: sig_atomic_t = 0
+public struct RunOptions: Sendable {
+    public var recoveryMode: Bool
+    public var restoreStateAt: URL?
+    public var saveStateOnStopAt: URL?
 
-final class ErrorBox: @unchecked Sendable {
-    nonisolated(unsafe) var error: Error?
-}
-
-@_cdecl("easyvm_signal_handler")
-func easyvm_signal_handler(_: Int32) {
-    stopRequestedFlag = 1
+    public init(recoveryMode: Bool = false, restoreStateAt: URL? = nil, saveStateOnStopAt: URL? = nil) {
+        self.recoveryMode = recoveryMode
+        self.restoreStateAt = restoreStateAt
+        self.saveStateOnStopAt = saveStateOnStopAt
+    }
 }
 
 public func runVM(model: VMModel, recoveryMode: Bool) throws {
-    stopRequestedFlag = 0
-    signal(SIGINT, easyvm_signal_handler)
-    signal(SIGTERM, easyvm_signal_handler)
+    try runVM(model: model, options: RunOptions(recoveryMode: recoveryMode))
+}
 
+public func runVM(model: VMModel, options: RunOptions) throws {
     try ensureDiskImagesExist(model: model)
     let configuration = try createConfiguration(model: model)
-    let virtualMachine = VZVirtualMachine(configuration: configuration)
-    let delegate = VMDelegate()
-    virtualMachine.delegate = delegate
 
-    if recoveryMode && model.config.type == .macOS {
-        let options = VZMacOSVirtualMachineStartOptions()
-        options.startUpFromMacOSRecovery = true
-        let semaphore = DispatchSemaphore(value: 0)
-        let errorBox = ErrorBox()
-        virtualMachine.start(options: options) { error in
-            errorBox.error = error
-            semaphore.signal()
-        }
-        semaphore.wait()
-        if let startError = errorBox.error {
-            throw startError
-        }
-    } else {
-        let semaphore = DispatchSemaphore(value: 0)
-        let errorBox = ErrorBox()
-        virtualMachine.start { result in
-            switch result {
-            case .success:
-                errorBox.error = nil
-            case .failure(let error):
-                errorBox.error = error
-            }
-            semaphore.signal()
-        }
-        semaphore.wait()
-        if let startError = errorBox.error {
-            throw startError
-        }
+    let vmQueue = DispatchQueue(label: "easyvm.vm")
+    let virtualMachine = VZVirtualMachine(configuration: configuration, queue: vmQueue)
+
+    let stopLatch = DispatchSemaphore(value: 0)
+    let stopBox = _StopBox()
+    let delegate = VMDelegate { error in
+        stopBox.setError(error)
+        stopLatch.signal()
+    }
+    vmQueue.sync {
+        virtualMachine.delegate = delegate
     }
 
-    while true {
-        if stopRequestedFlag != 0 {
-            exit(0)
+    signal(SIGINT, SIG_IGN)
+    signal(SIGTERM, SIG_IGN)
+    let sigintSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: vmQueue)
+    let sigtermSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: vmQueue)
+    let requestStop: @Sendable () -> Void = {
+        if let saveURL = options.saveStateOnStopAt, #available(macOS 14.0, *) {
+            virtualMachine.pause { _ in
+                virtualMachine.saveMachineStateTo(url: saveURL) { saveError in
+                    if let saveError {
+                        stopBox.setError(saveError)
+                    }
+                    virtualMachine.stop { _ in }
+                }
+            }
+        } else {
+            virtualMachine.stop { _ in }
         }
-        if delegate.didStop {
-            if let error = delegate.stopError {
-                throw error
+    }
+    sigintSource.setEventHandler(handler: requestStop)
+    sigtermSource.setEventHandler(handler: requestStop)
+    sigintSource.resume()
+    sigtermSource.resume()
+
+    try vmQueueStart(virtualMachine: virtualMachine, queue: vmQueue, options: options, osType: model.config.type)
+
+    stopLatch.wait()
+
+    if let error = stopBox.error {
+        throw error
+    }
+}
+
+final class _StopBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _error: Error?
+    var error: Error? { lock.lock(); defer { lock.unlock() }; return _error }
+    func setError(_ error: Error?) {
+        lock.lock(); defer { lock.unlock() }
+        if _error == nil { _error = error }
+    }
+}
+
+private func vmQueueStart(virtualMachine: VZVirtualMachine, queue: DispatchQueue, options: RunOptions, osType: VMOSType) throws {
+    let start = DispatchSemaphore(value: 0)
+    let errBox = _StopBox()
+
+    queue.async {
+        if let restoreURL = options.restoreStateAt {
+            if #available(macOS 14.0, *) {
+                virtualMachine.restoreMachineStateFrom(url: restoreURL) { restoreError in
+                    if let restoreError {
+                        errBox.setError(restoreError)
+                        start.signal()
+                        return
+                    }
+                    virtualMachine.resume { result in
+                        if case let .failure(error) = result { errBox.setError(error) }
+                        start.signal()
+                    }
+                }
+            } else {
+                errBox.setError(EasyVMError.hostUnsupported("Snapshot restore requires macOS 14 or later"))
+                start.signal()
             }
             return
         }
-        Thread.sleep(forTimeInterval: 1.0)
+
+        if options.recoveryMode && osType == .macOS {
+            let startOpts = VZMacOSVirtualMachineStartOptions()
+            startOpts.startUpFromMacOSRecovery = true
+            virtualMachine.start(options: startOpts) { error in
+                if let error { errBox.setError(error) }
+                start.signal()
+            }
+        } else {
+            virtualMachine.start { result in
+                if case let .failure(error) = result { errBox.setError(error) }
+                start.signal()
+            }
+        }
     }
+
+    start.wait()
+    if let error = errBox.error { throw error }
 }
