@@ -13,11 +13,13 @@ Options:
   --repo <owner/name>      GitHub source repo. Auto-detected if omitted.
   --only-cli               Publish only CLI formula (skip app/cask build).
   --only-app               Publish only app cask.
+  --minor                  Bump minor version (x.Y.0). Default is patch (x.y.Z+1).
+  --major                  Bump major version (X.0.0).
   --skip-tests             Skip pre-release tests.
   -h, --help               Show this help.
 
 What this script does:
-  1) Bump patch version in VERSION
+  1) Bump version in VERSION (patch by default; --minor or --major to override)
   2) Build artifacts (CLI and/or App DMG)
   3) Commit & push version bump
   4) Call scripts/release_homebrew_tap.sh with the bumped version
@@ -47,6 +49,7 @@ GH_REPO=""
 ONLY_CLI=0
 ONLY_APP=0
 SKIP_TESTS=0
+BUMP="patch"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -60,6 +63,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --only-app)
       ONLY_APP=1
+      shift
+      ;;
+    --minor)
+      BUMP="minor"
+      shift
+      ;;
+    --major)
+      BUMP="major"
       shift
       ;;
     --skip-tests)
@@ -103,8 +114,18 @@ if [[ ! -x "$ROOT_DIR/scripts/release_homebrew_tap.sh" ]]; then
   exit 1
 fi
 
-if [[ ! -x "$ROOT_DIR/inc_patch_version.sh" ]]; then
-  echo "Missing version script: inc_patch_version.sh" >&2
+case "$BUMP" in
+  patch) BUMP_SCRIPT="inc_patch_version.sh" ;;
+  minor) BUMP_SCRIPT="inc_minor_version.sh" ;;
+  major) BUMP_SCRIPT="inc_major_version.sh" ;;
+  *)
+    echo "Unknown bump mode: $BUMP" >&2
+    exit 1
+    ;;
+esac
+
+if [[ ! -x "$ROOT_DIR/$BUMP_SCRIPT" ]]; then
+  echo "Missing version script: $BUMP_SCRIPT" >&2
   exit 1
 fi
 
@@ -130,8 +151,8 @@ rollback() {
 }
 trap rollback EXIT
 
-echo "Bumping patch version..."
-NO_GIT=1 "$ROOT_DIR/inc_patch_version.sh"
+echo "Bumping $BUMP version..."
+NO_GIT=1 "$ROOT_DIR/$BUMP_SCRIPT"
 VERSION=$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")
 TAG="v$VERSION"
 echo "Release version: $VERSION"
