@@ -12,7 +12,10 @@ The app and the CLI share one core (`EasyVMCore`). A VM bundle produced by eithe
 
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)](https://www.apple.com/macos)
+[![Latest release](https://img.shields.io/github/v/release/everettjf/EasyVM?label=release)](https://github.com/everettjf/EasyVM/releases/latest)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Chat-7289DA)](https://discord.gg/uxuy3vVtWs)
+
+> **What's new in v1.1.0** — OCI registry `push` / `pull` (tart-style image distribution), Rosetta + bridged networking, macOS 14 snapshots (`--restore` / `--save-on-stop`), a non-blocking VM runner, APFS `clonefile`-backed `clone`, NAT `ip` / `ssh` helpers, and a guest-agent scaffold. [Full notes →](https://github.com/everettjf/EasyVM/releases/tag/v1.1.0)
 
 ---
 

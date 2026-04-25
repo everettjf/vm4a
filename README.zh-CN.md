@@ -12,7 +12,10 @@ App 与 CLI 共享同一个核心（`EasyVMCore`）。任一侧创建的 VM bund
 
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)](https://www.apple.com/macos)
+[![Latest release](https://img.shields.io/github/v/release/everettjf/EasyVM?label=release)](https://github.com/everettjf/EasyVM/releases/latest)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Chat-7289DA)](https://discord.gg/uxuy3vVtWs)
+
+> **v1.1.0 新特性** — OCI 仓库 `push` / `pull`（tart 风格的镜像分发）、Rosetta + 桥接网络、macOS 14 快照（`--restore` / `--save-on-stop`）、非阻塞 VM Runner、基于 APFS `clonefile` 的快速 `clone`、NAT 模式的 `ip` / `ssh` 助手、以及 guest-agent 脚手架。[完整 release notes →](https://github.com/everettjf/EasyVM/releases/tag/v1.1.0)
 
 ---
 
