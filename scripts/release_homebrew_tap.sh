@@ -275,10 +275,10 @@ CASK
 fi
 
 cd "$TAP_DIR"
-if git diff --quiet; then
+git add -A
+if git diff --cached --quiet; then
   echo "No tap changes detected."
 else
-  git add .
   COMMIT_MSG="release easyvm $TAG"
   if [[ "$PUBLISH_CLI" -eq 1 && "$PUBLISH_APP" -eq 0 ]]; then
     COMMIT_MSG="release easyvm CLI $TAG"
