@@ -159,6 +159,90 @@ struct MCPServerTests {
     }
 
     @Test
+    func resourcesListEnumeratesKnownURIs() async throws {
+        let req = #"{"jsonrpc":"2.0","id":10,"method":"resources/list"}"#
+        let transport = InMemoryMCPTransport(input: [req])
+        let server = MCPServer(
+            config: MCPServerConfig(executablePath: "/usr/bin/true"),
+            transport: transport
+        )
+        try await server.run()
+
+        let resp = try parseResponse(transport.outputLines[0])
+        let result = try #require(resp["result"] as? [String: Any])
+        let resources = try #require(result["resources"] as? [[String: Any]])
+        let uris = resources.compactMap { $0["uri"] as? String }
+        #expect(uris.contains("vm4a://vms"))
+        #expect(uris.contains("vm4a://sessions"))
+        #expect(uris.contains("vm4a://pools"))
+    }
+
+    @Test
+    func resourcesReadReturnsJSONForVms() async throws {
+        let temp = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appending(path: "vm4a-mcp-rsrc-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+
+        let req = #"{"jsonrpc":"2.0","id":11,"method":"resources/read","params":{"uri":"vm4a://vms?storage=\#(temp.path())"}}"#
+        let transport = InMemoryMCPTransport(input: [req])
+        let server = MCPServer(
+            config: MCPServerConfig(executablePath: "/usr/bin/true"),
+            transport: transport
+        )
+        try await server.run()
+
+        let resp = try parseResponse(transport.outputLines[0])
+        let result = try #require(resp["result"] as? [String: Any])
+        let contents = try #require(result["contents"] as? [[String: Any]])
+        #expect(contents.count == 1)
+        #expect(contents[0]["mimeType"] as? String == "application/json")
+        let text = try #require(contents[0]["text"] as? String)
+        let parsed = try JSONSerialization.jsonObject(with: Data(text.utf8))
+        let arr = try #require(parsed as? [Any])
+        #expect(arr.isEmpty)  // no VMs in the temp dir
+    }
+
+    @Test
+    func promptsListEnumeratesCannedPrompts() async throws {
+        let req = #"{"jsonrpc":"2.0","id":12,"method":"prompts/list"}"#
+        let transport = InMemoryMCPTransport(input: [req])
+        let server = MCPServer(
+            config: MCPServerConfig(executablePath: "/usr/bin/true"),
+            transport: transport
+        )
+        try await server.run()
+
+        let resp = try parseResponse(transport.outputLines[0])
+        let result = try #require(resp["result"] as? [String: Any])
+        let prompts = try #require(result["prompts"] as? [[String: Any]])
+        let names = Set(prompts.compactMap { $0["name"] as? String })
+        #expect(names.contains("agent-loop"))
+        #expect(names.contains("debug-failed-task"))
+        #expect(names.contains("triage-vm"))
+    }
+
+    @Test
+    func promptsGetRendersAgentLoopWithArgs() async throws {
+        let req = #"{"jsonrpc":"2.0","id":13,"method":"prompts/get","params":{"name":"agent-loop","arguments":{"image":"ghcr.io/foo/bar:latest","task_command":"python3 step.py"}}}"#
+        let transport = InMemoryMCPTransport(input: [req])
+        let server = MCPServer(
+            config: MCPServerConfig(executablePath: "/usr/bin/true"),
+            transport: transport
+        )
+        try await server.run()
+
+        let resp = try parseResponse(transport.outputLines[0])
+        let result = try #require(resp["result"] as? [String: Any])
+        let messages = try #require(result["messages"] as? [[String: Any]])
+        #expect(messages.count == 1)
+        let content = try #require(messages[0]["content"] as? [String: Any])
+        let text = try #require(content["text"] as? String)
+        #expect(text.contains("ghcr.io/foo/bar:latest"))
+        #expect(text.contains("python3 step.py"))
+    }
+
+    @Test
     func jsonValueRoundTripsCommonTypes() throws {
         let original: JSONValue = .object([
             "n": .null,

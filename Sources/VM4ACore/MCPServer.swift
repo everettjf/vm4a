@@ -171,6 +171,53 @@ public struct MCPCallResult: Codable, Sendable {
     }
 }
 
+public struct MCPResource: Codable, Sendable {
+    public let uri: String
+    public let name: String
+    public let description: String
+    public let mimeType: String
+}
+
+public struct MCPResourceContent: Codable, Sendable {
+    public let uri: String
+    public let mimeType: String
+    public let text: String
+}
+
+public struct MCPResourceListResult: Codable, Sendable {
+    public let resources: [MCPResource]
+}
+
+public struct MCPResourceReadResult: Codable, Sendable {
+    public let contents: [MCPResourceContent]
+}
+
+public struct MCPPrompt: Codable, Sendable {
+    public let name: String
+    public let description: String
+    public let arguments: [MCPPromptArgument]?
+}
+
+public struct MCPPromptArgument: Codable, Sendable {
+    public let name: String
+    public let description: String
+    public let required: Bool
+}
+
+public struct MCPPromptMessage: Codable, Sendable {
+    public let role: String       // "user" or "assistant"
+    public let content: MCPContent
+}
+
+public struct MCPPromptListResult: Codable, Sendable {
+    public let prompts: [MCPPrompt]
+}
+
+public struct MCPPromptGetResult: Codable, Sendable {
+    public let description: String
+    public let messages: [MCPPromptMessage]
+}
+
 public struct MCPInitializeResult: Codable, Sendable {
     public let protocolVersion: String
     public let capabilities: JSONValue
@@ -252,7 +299,11 @@ public actor MCPServer {
         case "initialize":
             let result = MCPInitializeResult(
                 protocolVersion: config.protocolVersion,
-                capabilities: .object(["tools": .object([:])]),
+                capabilities: .object([
+                    "tools": .object([:]),
+                    "resources": .object([:]),
+                    "prompts": .object([:])
+                ]),
                 serverInfo: .init(name: config.serverName, version: config.serverVersion)
             )
             return wrap(id: id, result: result)
@@ -277,6 +328,34 @@ public actor MCPServer {
                     return .init(id: id, result: v)
                 }
                 return .init(id: id, error: .init(code: JSONRPCError.internalError, message: err.message))
+            } catch {
+                return .init(id: id, error: .init(code: JSONRPCError.internalError, message: "\(error)"))
+            }
+
+        case "resources/list":
+            return wrap(id: id, result: MCPResourceListResult(resources: vm4aResources()))
+
+        case "resources/read":
+            do {
+                let uri = try parseResourceURI(request.params)
+                let contents = try readResource(uri: uri)
+                return wrap(id: id, result: MCPResourceReadResult(contents: contents))
+            } catch let err as MCPCallError {
+                return .init(id: id, error: .init(code: JSONRPCError.invalidParams, message: err.message))
+            } catch {
+                return .init(id: id, error: .init(code: JSONRPCError.internalError, message: "\(error)"))
+            }
+
+        case "prompts/list":
+            return wrap(id: id, result: MCPPromptListResult(prompts: vm4aPrompts()))
+
+        case "prompts/get":
+            do {
+                let (name, args) = try parsePromptGet(request.params)
+                let result = try renderPrompt(name: name, args: args)
+                return wrap(id: id, result: result)
+            } catch let err as MCPCallError {
+                return .init(id: id, error: .init(code: JSONRPCError.invalidParams, message: err.message))
             } catch {
                 return .init(id: id, error: .init(code: JSONRPCError.internalError, message: "\(error)"))
             }
@@ -415,6 +494,203 @@ public actor MCPServer {
                 )
             )
         ]
+    }
+
+    // MARK: - Resources
+
+    func vm4aResources() -> [MCPResource] {
+        return [
+            MCPResource(
+                uri: "vm4a://vms",
+                name: "VM bundles in cwd",
+                description: "JSON array of {id, name, path, os, status, pid, ip} for every bundle in the current working directory.",
+                mimeType: "application/json"
+            ),
+            MCPResource(
+                uri: "vm4a://sessions",
+                name: "Recorded sessions",
+                description: "JSON array of session descriptors {id, bundlePath?, file, modified, bytes} discoverable from cwd + ~/.vm4a/sessions.",
+                mimeType: "application/json"
+            ),
+            MCPResource(
+                uri: "vm4a://pools",
+                name: "Pool definitions",
+                description: "JSON array of pool definitions saved in ~/.vm4a/pools/.",
+                mimeType: "application/json"
+            )
+        ]
+    }
+
+    func parseResourceURI(_ params: JSONValue?) throws -> String {
+        guard let params, let obj = params.objectValue, let uri = obj["uri"]?.stringValue else {
+            throw MCPCallError("resources/read requires 'uri'")
+        }
+        return uri
+    }
+
+    func readResource(uri: String) throws -> [MCPResourceContent] {
+        let json = JSONEncoder()
+        json.outputFormatting = [.sortedKeys, .prettyPrinted]
+
+        // vm4a://vms[?storage=/path]
+        if uri == "vm4a://vms" || uri.hasPrefix("vm4a://vms?") {
+            let storage = queryParam(uri, key: "storage") ?? FileManager.default.currentDirectoryPath
+            let rows = listVMSummaries(in: URL(fileURLWithPath: storage, isDirectory: true))
+            let data = try json.encode(rows)
+            return [.init(uri: uri, mimeType: "application/json", text: String(data: data, encoding: .utf8) ?? "[]")]
+        }
+
+        // vm4a://sessions[?bundle=/path]
+        if uri == "vm4a://sessions" || uri.hasPrefix("vm4a://sessions?") {
+            let bundle = queryParam(uri, key: "bundle")
+            let rows = SessionStore.discoverSessions(bundlePath: bundle)
+            let data = try json.encode(rows)
+            return [.init(uri: uri, mimeType: "application/json", text: String(data: data, encoding: .utf8) ?? "[]")]
+        }
+
+        // vm4a://session/<id>[?bundle=/path]
+        if let prefix = uri.range(of: "vm4a://session/") {
+            let rest = String(uri[prefix.upperBound...])
+            let id: String
+            let bundle: String?
+            if let q = rest.firstIndex(of: "?") {
+                id = String(rest[..<q])
+                bundle = queryParam(uri, key: "bundle")
+            } else {
+                id = rest
+                bundle = nil
+            }
+            let events = try SessionStore.read(id: id, bundlePath: bundle)
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
+            let data = try encoder.encode(events)
+            return [.init(uri: uri, mimeType: "application/json", text: String(data: data, encoding: .utf8) ?? "[]")]
+        }
+
+        if uri == "vm4a://pools" {
+            let pools = (try? PoolStore.list()) ?? []
+            let data = try json.encode(pools)
+            return [.init(uri: uri, mimeType: "application/json", text: String(data: data, encoding: .utf8) ?? "[]")]
+        }
+
+        throw MCPCallError("Unknown resource URI: \(uri). Try resources/list.")
+    }
+
+    private func queryParam(_ uri: String, key: String) -> String? {
+        guard let q = uri.firstIndex(of: "?") else { return nil }
+        let qs = uri[uri.index(after: q)...]
+        for pair in qs.split(separator: "&") {
+            let kv = pair.split(separator: "=", maxSplits: 1)
+            if String(kv[0]) == key {
+                return kv.count > 1 ? String(kv[1]).removingPercentEncoding ?? String(kv[1]) : ""
+            }
+        }
+        return nil
+    }
+
+    // MARK: - Prompts
+
+    func vm4aPrompts() -> [MCPPrompt] {
+        return [
+            MCPPrompt(
+                name: "agent-loop",
+                description: "Idiomatic vm4a agent loop: spawn a base VM, snapshot, fork-per-task, exec, reset on failure. Returns the canonical commands and a short explanation.",
+                arguments: [
+                    .init(name: "image", description: "OCI reference for the base image", required: true),
+                    .init(name: "task_command", description: "What to run inside each per-task fork", required: true)
+                ]
+            ),
+            MCPPrompt(
+                name: "debug-failed-task",
+                description: "Inspect a session that ended with a failed exec and summarise what went wrong + suggest next steps.",
+                arguments: [
+                    .init(name: "session_id", description: "Session id (the one passed to --session)", required: true),
+                    .init(name: "bundle_path", description: "Bundle path the session is stored under", required: false)
+                ]
+            ),
+            MCPPrompt(
+                name: "triage-vm",
+                description: "Walk the VM through a quick health check (uptime, disk, memory, dmesg tail) and report.",
+                arguments: [
+                    .init(name: "vm_path", description: "Path to the running VM bundle", required: true)
+                ]
+            )
+        ]
+    }
+
+    func parsePromptGet(_ params: JSONValue?) throws -> (String, [String: JSONValue]) {
+        guard let params, let obj = params.objectValue, let name = obj["name"]?.stringValue else {
+            throw MCPCallError("prompts/get requires 'name'")
+        }
+        let args = obj["arguments"]?.objectValue ?? [:]
+        return (name, args)
+    }
+
+    func renderPrompt(name: String, args: [String: JSONValue]) throws -> MCPPromptGetResult {
+        switch name {
+        case "agent-loop":
+            guard let image = args["image"]?.stringValue else { throw MCPCallError("agent-loop: 'image' required") }
+            guard let task = args["task_command"]?.stringValue else { throw MCPCallError("agent-loop: 'task_command' required") }
+            let body = """
+            Use the vm4a tools (or CLI) to run this agent loop:
+
+            1. Bootstrap the base VM (only on first run):
+               spawn name=dev from=\(image) save_on_stop=/tmp/vm4a/dev/clean.vzstate wait_ssh=true
+            2. For each task:
+               fork source_path=/tmp/vm4a/dev destination_path=/tmp/vm4a/task-<n> \
+                    from_snapshot=/tmp/vm4a/dev/clean.vzstate auto_start=true wait_ssh=true
+               exec vm_path=/tmp/vm4a/task-<n> command=[\(task)]
+            3. On failure, reset:
+               reset vm_path=/tmp/vm4a/task-<n> from=/tmp/vm4a/dev/clean.vzstate
+            4. When done with a task: stop vm_path=/tmp/vm4a/task-<n> and rm -rf the bundle.
+            """
+            return MCPPromptGetResult(
+                description: "Standard vm4a agent loop",
+                messages: [.init(role: "user", content: .init(text: body))]
+            )
+
+        case "debug-failed-task":
+            guard let sid = args["session_id"]?.stringValue else { throw MCPCallError("debug-failed-task: 'session_id' required") }
+            let bundle = args["bundle_path"]?.stringValue
+            let events = try SessionStore.read(id: sid, bundlePath: bundle)
+            let summary = events.map { e -> String in
+                let mark = e.success ? "✓" : "✗"
+                return "  \(mark) #\(e.seq) \(e.kind) — \(e.summary ?? "")"
+            }.joined(separator: "\n")
+            let body = """
+            Session \(sid) had \(events.count) event(s):
+
+            \(summary)
+
+            Identify the first failure, summarise what likely caused it (look at outcome.stderr / outcome.exit_code in the JSONL), and propose either a code fix or a vm4a reset+retry.
+            """
+            return MCPPromptGetResult(
+                description: "Triage a recorded vm4a session",
+                messages: [.init(role: "user", content: .init(text: body))]
+            )
+
+        case "triage-vm":
+            guard let vmPath = args["vm_path"]?.stringValue else { throw MCPCallError("triage-vm: 'vm_path' required") }
+            let body = """
+            For VM bundle at \(vmPath), run these via the vm4a `exec` tool and summarise findings:
+
+              uptime
+              df -h /
+              free -m
+              dmesg | tail -50
+              journalctl -p err -n 50
+
+            Flag anything red (>90% disk, recent kernel errors, OOM kills).
+            """
+            return MCPPromptGetResult(
+                description: "Quick VM health triage",
+                messages: [.init(role: "user", content: .init(text: body))]
+            )
+
+        default:
+            throw MCPCallError("Unknown prompt: \(name). Try prompts/list.")
+        }
     }
 
     // MARK: - Tool dispatcher

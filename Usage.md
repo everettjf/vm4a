@@ -216,6 +216,25 @@ Manually inspect the catalog:
 printf '{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n' | vm4a mcp
 ```
 
+In addition to tools, the server exposes:
+
+**Resources** — read-only views of vm4a state:
+
+| URI | Returns |
+|---|---|
+| `vm4a://vms?storage=/path` | VM bundles in a directory (defaults to cwd) |
+| `vm4a://sessions?bundle=/path` | Recorded sessions discoverable from a bundle + `~/.vm4a/sessions` |
+| `vm4a://session/<id>?bundle=/path` | Every JSONL event in a specific session |
+| `vm4a://pools` | All saved pool definitions |
+
+**Prompts** — canned templates the AI client can invoke:
+
+| Prompt | Arguments | Purpose |
+|---|---|---|
+| `agent-loop` | `image`, `task_command` | Idiomatic spawn → fork → exec → reset pattern |
+| `debug-failed-task` | `session_id`, `bundle_path?` | Triage a recorded session, identify the first failure, suggest a fix |
+| `triage-vm` | `vm_path` | Quick VM health check (uptime, disk, memory, dmesg) |
+
 ---
 
 ## HTTP API and Python SDK

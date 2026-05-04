@@ -216,6 +216,25 @@ server 走按行分隔的 JSON-RPC 2.0（标准 MCP stdio transport，protocol v
 printf '{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n' | vm4a mcp
 ```
 
+除了 tools，还暴露：
+
+**Resources** —— vm4a 状态的只读视图：
+
+| URI | 返回 |
+|---|---|
+| `vm4a://vms?storage=/path` | 某目录下的 VM bundle 列表（默认 cwd） |
+| `vm4a://sessions?bundle=/path` | bundle + `~/.vm4a/sessions` 下能发现的 session 列表 |
+| `vm4a://session/<id>?bundle=/path` | 某个 session 的所有 JSONL 事件 |
+| `vm4a://pools` | 所有保存的池定义 |
+
+**Prompts** —— AI 客户端可以调用的模板：
+
+| Prompt | 参数 | 用途 |
+|---|---|---|
+| `agent-loop` | `image`、`task_command` | 标准 spawn → fork → exec → reset 模式 |
+| `debug-failed-task` | `session_id`、`bundle_path?` | 排查一个已记录的 session，定位首个失败、给出修复建议 |
+| `triage-vm` | `vm_path` | VM 快速健康检查（uptime、磁盘、内存、dmesg） |
+
 ---
 
 ## HTTP API 与 Python SDK
