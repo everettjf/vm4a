@@ -180,6 +180,7 @@ class Client:
         self,
         name: str,
         *,
+        os_: str = "linux",
         storage: str | None = None,
         from_: str | None = None,
         image: str | None = None,
@@ -200,7 +201,7 @@ class Client:
         timeout: float | None = None,
     ) -> SpawnOutcome:
         body = _drop_none({
-            "name": name, "storage": storage, "from": from_, "image": image,
+            "name": name, "os": os_, "storage": storage, "from": from_, "image": image,
             "cpu": cpu, "memory_gb": memory_gb, "disk_gb": disk_gb,
             "network": network,
             "bridged_interface": bridged_interface, "rosetta": rosetta,

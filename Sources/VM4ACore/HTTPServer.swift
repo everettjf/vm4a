@@ -218,12 +218,16 @@ public func makeVM4ARouter(config: VM4AHTTPServerConfig) -> HTTPRouter {
                 guard let name = args["name"]?.stringValue else {
                     return .error(400, message: "missing 'name'")
                 }
+                let osStr = args["os"]?.stringValue ?? "linux"
+                guard let os = VMOSType(rawValue: osStr) else {
+                    return .error(400, message: "invalid os '\(osStr)' (linux | macOS)")
+                }
                 let memBytes = try args["memory_gb"]?.intValue.map { try bytesFromGB($0, fieldName: "memory_gb") }
                 let diskBytes = try args["disk_gb"]?.intValue.map { try bytesFromGB($0, fieldName: "disk_gb") }
                 let networkMode: NetworkMode = args["network"]?.stringValue.flatMap(NetworkMode.parse) ?? .nat
                 let outcome = try await runSpawn(options: SpawnOptions(
                     name: name,
-                    os: .linux,
+                    os: os,
                     storage: URL(fileURLWithPath: storageStr, isDirectory: true),
                     from: args["from"]?.stringValue,
                     imagePath: args["image"]?.stringValue,

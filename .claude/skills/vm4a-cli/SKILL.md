@@ -2,13 +2,15 @@
 name: vm4a-cli
 description: |
   Use this skill when the user wants to create, run, stop, clone, push/pull,
-  SSH into, or otherwise manage VM4A Linux virtual machines via the `vm4a` CLI.
+  SSH into, or otherwise manage VM4A virtual machines via the `vm4a` CLI.
   Triggers include any mention of VM4A + "VM", the commands `vm4a create`,
-  `vm4a run`, `vm4a pull`, `vm4a ssh`, "linux VM on mac", or requests to
-  automate Linux VM lifecycle (CI, scripting, batch clones).
+  `vm4a run`, `vm4a pull`, `vm4a ssh`, "linux VM on mac", "macOS VM via CLI",
+  or requests to automate VM lifecycle (CI, scripting, batch clones). Both
+  Linux and macOS guests are supported; macOS first-boot needs one manual
+  Setup Assistant click-through per fresh IPSW (Apple doesn't expose a
+  scriptable skip).
 
-  Do NOT use this skill for: macOS guest install (the CLI is Linux-only;
-  redirect to the SwiftUI app), the SwiftUI app itself (open Xcode instead),
+  Do NOT use this skill for: the SwiftUI app itself (open Xcode instead),
   non-VM4A VM tools (UTM/VirtualBuddy/tart have their own CLIs), or questions
   about the Virtualization.framework itself.
 ---
@@ -57,6 +59,7 @@ Before running anything:
 | Intent | Command |
 | --- | --- |
 | Create a Linux VM bundle | `vm4a create NAME [--image ISO.iso] [--network bridged --bridged-interface en0] [--rosetta]` |
+| Install a macOS VM from IPSW (10–20 min, drives VZMacOSInstaller) | `vm4a create NAME --os macOS --image macos-15.ipsw --cpu 4 --memory-gb 8 --disk-gb 80` |
 | List bundles in a directory | `vm4a list --storage /tmp/vm4a [--output json]` |
 | Start a VM in the background | `vm4a run /path/to/bundle` |
 | Start in foreground (logs to stdout) | `vm4a run /path/to/bundle --foreground` |
@@ -150,11 +153,16 @@ entries), not O(disk image size).
 - **`--rosetta` is Linux only** and requires
   `softwareupdate --install-rosetta --agree-to-license` before first run.
   The CLI warns but doesn't block.
-- **The CLI is Linux-only.** macOS guests would need interactive Setup
-  Assistant + a manual Remote Login toggle, neither of which can be
-  driven headlessly. If the user asks for a macOS VM, redirect them
-  to open `VM4A.app` → `File > New macOS VM` (the SwiftUI app handles
-  that flow). The CLI's `create` and `spawn` no longer accept `--os`.
+- **macOS guests work end-to-end via the CLI**, with one caveat: after
+  `vm4a create --os macOS --image foo.ipsw` finishes (10–20 min), the
+  VM lands at Apple's Setup Assistant on first boot. Apple does not
+  expose a scriptable skip path, so the user needs to click through it
+  once in VM4A.app: pick region/keyboard, skip Apple ID, **create a
+  user account**, then **System Settings → General → Sharing → Remote
+  Login: ON**. After that single click-through, every CLI / MCP / HTTP
+  / SDK operation works on the macOS bundle exactly like on Linux,
+  and pulling a published macOS bundle from GHCR skips Setup Assistant
+  entirely (the user account + Remote Login are baked in).
 - **Config JSON format** starts at `schemaVersion: 1`. Old bundles without
   the field still load — tolerant decoding treats missing as 1. When
   adding new fields, make them optional in Core.swift decoding.
@@ -205,7 +213,7 @@ entries), not O(disk image size).
 ## When NOT to use the CLI
 
 Redirect to the GUI app for:
-- Anything to do with macOS *guests* (CLI is Linux-only; the GUI app handles macOS guest install end-to-end)
+- Walking the user through Setup Assistant interactively (open VM4A.app, pick the bundle, click Run, do the GUI steps; come back to CLI afterward).
 - Changing graphics resolution / audio config (GUI has device editors)
 - First-time users who want a wizard
 

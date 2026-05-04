@@ -1,6 +1,6 @@
 # VM4A — 给 AI Agent 用的虚拟机
 
-**在 Apple Silicon 上为 AI Agent 跑代码提供一次性、可隔离的 Linux 虚拟机。** 基于 Apple [Virtualization framework](https://developer.apple.com/documentation/virtualization)，按 2026 年 AI Agent 的真实工作方式打包。
+**在 Apple Silicon 上为 AI Agent 跑代码提供一次性、可隔离的 macOS / Linux 虚拟机。** 基于 Apple [Virtualization framework](https://developer.apple.com/documentation/virtualization)，按 2026 年 AI Agent 的真实工作方式打包。
 
 > English: [README.md](README.md)
 
@@ -15,13 +15,13 @@
 
 写代码的 Agent —— Claude Code、Cursor、OpenAI Codex、自己写的循环 —— 反复需要一个东西：**一台干净、隔离、坏了能重置的机器**。VM4A 是本地的、跑在你 Mac 上的、并且是这条赛道里**唯一**同时满足下面这些条件的工具：
 
-- 🐧 **Linux ARM64 guest，全 headless** —— Agent 友好：没有 Setup Assistant、不需要人工干预
+- 🖥 **同时支持 macOS 和 Linux guest** —— 跑 iOS/macOS app 编译，不只是 `pip install`
 - 📸 **VZ 快照（macOS 14+）** —— `--save-on-stop` / `--restore`，失败 → 重置 → 重试只要 1 秒级
 - 📦 **OCI registry push/pull** —— 像分发容器镜像那样分发 Agent 环境
 - 🚀 **Apple Silicon 原生** —— `Virtualization.framework`，接近裸机性能，不走 QEMU
 - 🪟 **GUI 是调试器，不是主界面** —— Agent 跑挂的时候，打开 App 看那一刻的快照
 
-> **为什么只支持 Linux guest？** `vm4a` 是面向 Agent 的 CLI。macOS guest 在 `Virtualization.framework` 里也是合法 VM，但 Apple 的 Setup Assistant + 手动开 Remote Login 这一步没法 headless 驱动，所以 macOS guest 没法被 Agent 自动 bootstrap。如果非 Agent 场景需要 macOS guest，可以用配套的 SwiftUI app 完成（手动）安装。**Host 要求：Apple Silicon Mac，macOS 13+。**
+> **macOS guest 安装流程。** `vm4a create --os macOS --image foo.ipsw` 直接用 Apple 的 `VZMacOSInstaller` 走完整安装流程（10–20 分钟）。装好的 VM 首次启动时会进 Setup Assistant，需要交互完成一次（建账号 + 打开 Remote Login），之后所有 vm4a 操作 —— `run`、`exec`、`cp`、`fork`、`reset`、`pool`、OCI push/pull、MCP 工具 —— 在 macOS bundle 上和 Linux 一样能用。从 registry 拉一个预制好的 macOS bundle 完全跳过 Setup Assistant。**Host 要求：Apple Silicon Mac，macOS 13+。**
 
 VM4A 念作 **"VM for Agent"**，CLI 二进制叫 `vm4a`。
 
@@ -91,7 +91,7 @@ cp ./.build/release/vm4a /usr/local/bin/
 | v2.0 P0 | Agent CLI 原语（`spawn`/`exec`/`cp`/`fork`/`reset`） | ✅ 已发布 |
 | v2.0 P1 | MCP server（`vm4a mcp`），Claude Code / Cursor / Cline 接入 | ✅ 已发布 |
 | v2.1 | HTTP API（`vm4a serve`）+ Python SDK | ✅ 已发布 |
-| v2.2 | 官方 OCI 模板（`ubuntu-base`/`python-dev`） | ✅ 已发布（构建脚本 + CI） |
+| v2.2 | 官方 OCI 模板（`ubuntu-base`/`python-dev`/`xcode-dev`） | ✅ 已发布（Linux 模板全自动；macOS 模板需要一次手动 Setup Assistant） |
 | v2.3 | Time Machine 视图（`vm4a-sessions` SwiftUI app + `vm4a session` CLI） | ✅ 已发布（独立 app；主 app 集成待做） |
 | v2.4 | 预热池运行时（`vm4a pool serve/acquire/release`）、`--network none\|nat\|bridged\|host` | ✅ 已发布（CPU/内存/磁盘大小之外的资源 cap + ISO 只读 是 VZ 限制下能做到的全部） |
 

@@ -88,8 +88,8 @@ rm -rf "/tmp/vm4a/$JOB_ID"
 ### spawn —— 一条命令完成创建+启动
 
 ```
-vm4a spawn <name> [--storage <dir>]
-                  (--from <oci-ref> | --image <iso>)
+vm4a spawn <name> [--os linux|macOS] [--storage <dir>]
+                  (--from <oci-ref> | --image <iso-or-ipsw>)
                   [--cpu <n>] [--memory-gb <n>] [--disk-gb <n>]
                   [--bridged-interface <bsdName>] [--rosetta]
                   [--restore <state.vzstate>] [--save-on-stop <state.vzstate>]
@@ -113,7 +113,7 @@ vm4a exec <vm-path> [--user <name>] [--key <path>] [--host <ip>]
                     [--session <id>] -- <command...>
 ```
 
-默认用户：`root`。不加 `--output json` 时 stdout/stderr 流式输出，退出码作为本进程的退出码。加上 `--output json` 后返回 `{exit_code, stdout, stderr, duration_ms, timed_out}`。
+默认用户：Linux 是 `root`，macOS 是当前用户。不加 `--output json` 时 stdout/stderr 流式输出，退出码作为本进程的退出码。加上 `--output json` 后返回 `{exit_code, stdout, stderr, duration_ms, timed_out}`。
 
 ```bash
 vm4a exec /tmp/vm4a/dev -- python3 -c 'print(1+1)'
@@ -165,7 +165,7 @@ vm4a reset <vm-path> --from <state.vzstate>
 
 | 命令 | 用途 |
 |---|---|
-| `vm4a create <name> [...]` | 从 ISO 创建 Linux VM bundle（不自动启动） |
+| `vm4a create <name> [--os linux\|macOS] [--image <path>] [...]` | 创建 VM bundle。Linux 用 ISO，macOS 用 IPSW（直接走完整安装） |
 | `vm4a list [--storage <dir>]` | 列出某目录下的 bundle，附带状态、pid、IP |
 | `vm4a run <vm-path> [--foreground]` | 后台（默认）或前台启动 VM |
 | `vm4a stop <vm-path> [--timeout <s>]` | 先 SIGTERM，超时则 SIGKILL |
@@ -177,7 +177,7 @@ vm4a reset <vm-path> --from <state.vzstate>
 | `vm4a ip <vm>` | 解析 NAT VM 的 IP（读 Apple DHCP leases） |
 | `vm4a ssh <vm> [--user <name>] -- <ssh args>` | SSH 进 VM，`--` 后的参数透传给 ssh |
 
-`run` 默认起一个 detached worker —— shell 立即返回，日志写到 `<vm>/.vm4a-run.log`。`--foreground` 直接流式输出 VZ 日志。
+`run` 默认起一个 detached worker —— shell 立即返回，日志写到 `<vm>/.vm4a-run.log`。`--foreground` 直接流式输出 VZ 日志。macOS guest 在 `vm4a create --os macOS --image foo.ipsw` 之后第一次启动会进 Setup Assistant，需要在 VM4A.app 里交互完成一次（建账号 + 打开 Remote Login → 系统设置 → 通用 → 共享），之后所有 vm4a 命令就能 SSH 进去了。
 
 ---
 
@@ -365,6 +365,7 @@ vm4a pool release "$VM"
 |---|---|
 | `ubuntu-base` | `ghcr.io/everettjf/vm4a-templates/ubuntu-base:24.04` |
 | `python-dev` | `ghcr.io/everettjf/vm4a-templates/python-dev:latest` |
+| `xcode-dev`（macOS，已过 Setup Assistant） | `ghcr.io/everettjf/vm4a-templates/xcode-dev:latest` |
 
 构建脚本和每月自动 rebuild 的 CI 流水线在 [`templates/`](templates/)。
 
@@ -443,8 +444,10 @@ demo/
 ├── state.json            # 运行时状态指针
 ├── Disk.img              # raw 磁盘镜像
 ├── MachineIdentifier     # VZ 平台标识
-├── NVRAM                 # EFI 变量存储
-├── console.log           # 串口日志，每次 run 时滚动
+├── NVRAM                 # （Linux）EFI 变量存储
+├── HardwareModel         # （macOS）VZ 硬件标识
+├── AuxiliaryStorage      # （macOS）操作系统启动数据
+├── console.log           # （Linux）串口日志，每次 run 时滚动
 ├── .vm4a-run.pid         # 运行中的 worker pid
 ├── .vm4a-run.log         # detached worker 的 stdout+stderr
 ├── .vm4a-sessions/       # 每个 <session-id>.jsonl 一条会话日志
@@ -481,5 +484,7 @@ CLI 创建的 bundle 能在 GUI 里用，反之亦然。
 | `--rosetta` 报"未安装" | `softwareupdate --install-rosetta --agree-to-license` |
 | Linux guest 启动卡住 | 确认 ISO 是 ARM64；检查 `MachineIdentifier`、`NVRAM` 文件存在 |
 | 快照参数被拒 | 需要 macOS 14+ host |
+| macOS guest 安装完一直黑屏 | 正常 —— 它在 Setup Assistant，打开 VM4A.app 交互完成一次 |
+| `vm4a exec /macos-vm` 报 "Connection refused" | macOS guest 还没开 Remote Login。VM4A.app 里：系统设置 → 通用 → 共享 → 远程登录打开 |
 | `vm4a serve` 返回 401 | 客户端要带同样的 `VM4A_AUTH_TOKEN` |
 | Bridged VM `vm4a ip` 没结果 | bridged 模式不走 Apple DHCP，传 `--host <ip>` |

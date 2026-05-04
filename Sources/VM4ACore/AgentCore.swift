@@ -108,8 +108,20 @@ public struct CreateBundleOutcome: Codable, Sendable {
 
 /// Build a fresh VM bundle on disk. Caller must ensure the destination
 /// (`<storage>/<name>`) does not yet exist.
+///
+/// For Linux, this is a quick filesystem-only operation: directories,
+/// JSON, NVRAM, and (if --image was given) an attached USB ISO.
+///
+/// For macOS, if `imagePath` is provided (an `.ipsw`), this drives the
+/// full Apple `VZMacOSInstaller` flow synchronously through `await`,
+/// taking 10–20 minutes depending on the IPSW size. Without `imagePath`
+/// the macOS bundle is just a config skeleton — useful only when you're
+/// going to populate it from `vm4a pull`.
 @discardableResult
-public func createBundle(options: CreateBundleOptions) throws -> CreateBundleOutcome {
+public func createBundle(
+    options: CreateBundleOptions,
+    progress: (@Sendable (String) -> Void)? = nil
+) async throws -> CreateBundleOutcome {
     if let cpu = options.cpu, cpu <= 0 {
         throw VM4AError.message("cpu must be greater than 0")
     }
@@ -203,10 +215,30 @@ public func createBundle(options: CreateBundleOptions) throws -> CreateBundleOut
     try writeJSON(state, to: model.stateURL)
     try ensureDiskImagesExist(model: model)
 
-    if options.os == .linux {
+    switch options.os {
+    case .linux:
         let machineIdentifier = VZGenericMachineIdentifier()
         try machineIdentifier.dataRepresentation.write(to: model.machineIdentifierURL)
         _ = try VZEFIVariableStore(creatingVariableStoreAt: model.efiVariableStoreURL)
+    case .macOS:
+        // For macOS, only the IPSW restore image flow produces a bootable bundle.
+        // Without an image, we leave HardwareModel/AuxiliaryStorage absent and
+        // the caller is expected to populate them via `vm4a pull` from a
+        // pre-installed bundle.
+        if let imagePath = normalizedImagePath, !imagePath.isEmpty {
+            progress?("Running VZMacOSInstaller (this takes 10–20 minutes)…")
+            try await runMacOSInstall(
+                model: model,
+                ipswPath: URL(fileURLWithPath: imagePath),
+                progress: { p in
+                    if let frac = p.fraction {
+                        progress?(String(format: "  install %.0f%% — %@", frac * 100, p.message))
+                    } else {
+                        progress?("  \(p.stage.rawValue): \(p.message)")
+                    }
+                }
+            )
+        }
     }
 
     return CreateBundleOutcome(
@@ -305,7 +337,7 @@ private func bundleExists(at url: URL) -> Bool {
 public func runSpawn(
     options: SpawnOptions,
     executable: String,
-    progress: ((String) -> Void)? = nil
+    progress: (@Sendable (String) -> Void)? = nil
 ) async throws -> SpawnOutcome {
     try FileManager.default.createDirectory(at: options.storage, withIntermediateDirectories: true)
     let bundleURL = options.storage.appending(path: options.name, directoryHint: .isDirectory)
@@ -320,7 +352,7 @@ public func runSpawn(
                 try FileManager.default.moveItem(at: pulled, to: bundleURL)
             }
         } else if options.imagePath != nil {
-            try createBundle(options: CreateBundleOptions(
+            try await createBundle(options: CreateBundleOptions(
                 name: options.name,
                 os: options.os,
                 storage: options.storage,
@@ -331,7 +363,7 @@ public func runSpawn(
                 networkMode: options.networkMode,
                 bridgedInterface: options.bridgedInterface,
                 rosetta: options.rosetta
-            ))
+            ), progress: progress)
         } else {
             throw VM4AError.message("Bundle '\(bundleURL.path())' not found. Pass --from <oci-ref> or --image <path>.")
         }

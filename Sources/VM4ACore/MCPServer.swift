@@ -372,14 +372,15 @@ public actor MCPServer {
         return [
             MCPTool(
                 name: "spawn",
-                description: "Create + start a Linux VM in one shot. If <storage>/<name> exists, just (re)starts it; else uses --from <oci-ref> or --image <iso>. Returns {id, name, path, os, pid, ip, ssh_ready}.",
+                description: "Create + start a VM in one shot. Linux from ISO or macOS from IPSW. If <storage>/<name> exists, just (re)starts it; else uses --from <oci-ref> or --image. Returns {id, name, path, os, pid, ip, ssh_ready}.",
                 inputSchema: schemaObject(
                     required: ["name"],
                     properties: [
                         "name": schemaString("VM name (becomes <storage>/<name>)"),
+                        "os": schemaEnum(["linux", "macOS"], description: "Default linux. macOS guests boot to Setup Assistant on first run, which is not scriptable."),
                         "storage": schemaString("Parent directory for bundles. Default cwd."),
                         "from": schemaString("OCI reference to pull if bundle missing"),
-                        "image": schemaString("Local Linux ISO path to install fresh"),
+                        "image": schemaString("Local image path: ISO for Linux, IPSW for macOS"),
                         "cpu": schemaInteger("vCPU count"),
                         "memory_gb": schemaInteger("Memory in GB"),
                         "disk_gb": schemaInteger("Disk size in GB"),
@@ -735,12 +736,16 @@ public actor MCPServer {
         guard let name = obj["name"]?.stringValue else {
             throw MCPCallError("spawn: 'name' required")
         }
+        let osStr = obj["os"]?.stringValue ?? "linux"
+        guard let os = VMOSType(rawValue: osStr) else {
+            throw MCPCallError("spawn: invalid os '\(osStr)' (linux | macOS)")
+        }
         let memBytes = try obj["memory_gb"]?.intValue.map { try bytesFromGB($0, fieldName: "memory_gb") }
         let diskBytes = try obj["disk_gb"]?.intValue.map { try bytesFromGB($0, fieldName: "disk_gb") }
         let networkMode: NetworkMode = obj["network"]?.stringValue.flatMap(NetworkMode.parse) ?? .nat
         let options = SpawnOptions(
             name: name,
-            os: .linux,
+            os: os,
             storage: storageURL,
             from: obj["from"]?.stringValue,
             imagePath: obj["image"]?.stringValue,

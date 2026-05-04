@@ -3,6 +3,7 @@ import VM4ACore
 import Foundation
 import Virtualization
 
+extension VMOSType: ExpressibleByArgument {}
 extension NetworkMode: ExpressibleByArgument {
     public init?(argument: String) {
         guard let v = NetworkMode.parse(argument) else { return nil }
@@ -58,16 +59,33 @@ struct VM4ACLI: AsyncParsableCommand {
     )
 }
 
-struct CreateCommand: ParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "create", abstract: "Create a Linux VM bundle")
+struct CreateCommand: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "create",
+        abstract: "Create a VM bundle (Linux from ISO, or macOS from IPSW)",
+        discussion: """
+            Linux: pass --image with an ARM64 ISO; the bundle attaches it as
+            a USB device for first-boot install.
+
+            macOS: pass --image with an .ipsw and Apple's VZMacOSInstaller
+            runs end-to-end (10–20 minutes). The resulting bundle boots into
+            Setup Assistant on first run, which Apple does not expose a
+            scriptable skip for; complete that step interactively in VM4A.app
+            or via the VZ framebuffer, after which all other vm4a commands
+            (run/exec/cp/fork/reset/…) work on macOS bundles just like Linux.
+            """
+    )
 
     @Argument(help: "VM name")
     var name: String
 
+    @Option(name: .long, help: "OS type: linux (default) or macOS")
+    var os: VMOSType = .linux
+
     @Option(name: .long, help: "Parent directory to store VM bundles")
     var storage: String = FileManager.default.currentDirectoryPath
 
-    @Option(name: .long, help: "Initial image path (ISO). Optional.")
+    @Option(name: .long, help: "Initial image path. Linux: ISO. macOS: IPSW (drives full install).")
     var image: String?
 
     @Option(name: .long, help: "vCPU count")
@@ -85,28 +103,31 @@ struct CreateCommand: ParsableCommand {
     @Option(name: .long, help: "Bridged interface bsdName (used with --network bridged). Use 'vm4a network list' to enumerate.")
     var bridgedInterface: String?
 
-    @Flag(name: .long, help: "Enable Rosetta translation share (macOS 13+ host).")
+    @Flag(name: .long, help: "Enable Rosetta translation share (Linux guest only, macOS 13+ host).")
     var rosetta: Bool = false
 
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
-    mutating func run() throws {
+    mutating func run() async throws {
         let storageURL = URL(fileURLWithPath: storage, isDirectory: true)
         let memoryBytes = try memoryGB.map { try bytesFromGB($0, fieldName: "memory-gb") }
         let diskBytes = try diskGB.map { try bytesFromGB($0, fieldName: "disk-gb") }
-        let outcome = try createBundle(options: CreateBundleOptions(
-            name: name,
-            os: .linux,
-            storage: storageURL,
-            imagePath: image,
-            cpu: cpu,
-            memoryBytes: memoryBytes,
-            diskBytes: diskBytes,
-            networkMode: network,
-            bridgedInterface: bridgedInterface,
-            rosetta: rosetta
-        ))
+        let outcome = try await createBundle(
+            options: CreateBundleOptions(
+                name: name,
+                os: os,
+                storage: storageURL,
+                imagePath: image,
+                cpu: cpu,
+                memoryBytes: memoryBytes,
+                diskBytes: diskBytes,
+                networkMode: network,
+                bridgedInterface: bridgedInterface,
+                rosetta: rosetta
+            ),
+            progress: { line in FileHandle.standardError.write(Data("\(line)\n".utf8)) }
+        )
         if let warning = outcome.rosettaWarning {
             FileHandle.standardError.write(Data("warning: \(warning)\n".utf8))
         }
@@ -115,7 +136,17 @@ struct CreateCommand: ParsableCommand {
         case .json:
             try writeJSONLine(outcome)
         case .text:
-            print("Created VM: \(outcome.path)")
+            if os == .macOS, image == nil {
+                print("Created macOS bundle skeleton at \(outcome.path).")
+                print("Note: no IPSW given. Pass --image foo.ipsw to drive the full install,")
+                print("or use `vm4a pull` to populate from a pre-installed bundle.")
+            } else if os == .macOS {
+                print("Installed macOS into \(outcome.path).")
+                print("First boot lands at Setup Assistant — complete it in VM4A.app, then")
+                print("enable Remote Login (Settings → General → Sharing) for SSH access.")
+            } else {
+                print("Created VM: \(outcome.path)")
+            }
         }
     }
 }

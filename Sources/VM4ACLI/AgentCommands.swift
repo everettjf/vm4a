@@ -19,7 +19,9 @@ struct SpawnCommand: AsyncParsableCommand {
             Behavior:
               - If <storage>/<name> already exists, just (re)start it.
               - Else if --from <oci-ref>: pull, then start.
-              - Else if --image <iso>: create from scratch (Linux), then start.
+              - Else if --image <iso-or-ipsw>: create from scratch, then start.
+                Linux ISO: attaches as USB, first-run install.
+                macOS IPSW: drives VZMacOSInstaller end-to-end (10–20 min).
 
             Designed for AI agents: --output json + --wait-ssh together give a
             single call that returns {ip, ssh_ready=true} or fails fast.
@@ -29,13 +31,16 @@ struct SpawnCommand: AsyncParsableCommand {
     @Argument(help: "VM name (becomes <storage>/<name>)")
     var name: String
 
+    @Option(name: .long, help: "OS type: linux (default) or macOS")
+    var os: VMOSType = .linux
+
     @Option(name: .long, help: "Parent directory to store VM bundles")
     var storage: String = FileManager.default.currentDirectoryPath
 
     @Option(name: .long, help: "Pull this OCI reference if bundle does not yet exist")
     var from: String?
 
-    @Option(name: .long, help: "Local Linux ISO path to install from when creating fresh")
+    @Option(name: .long, help: "Local image path. Linux: ISO. macOS: IPSW.")
     var image: String?
 
     @Option(name: .long, help: "vCPU count")
@@ -90,6 +95,7 @@ struct SpawnCommand: AsyncParsableCommand {
         let storageURL = URL(fileURLWithPath: storage, isDirectory: true)
         let recorder = SessionRecorder(id: session, kind: "spawn", args: [
             "name": .string(name),
+            "os": .string(os.rawValue),
             "from": from.map { .string($0) } ?? .null,
             "image": image.map { .string($0) } ?? .null,
         ])
@@ -99,7 +105,7 @@ struct SpawnCommand: AsyncParsableCommand {
         let diskBytes = try diskGB.map { try bytesFromGB($0, fieldName: "disk-gb") }
         let options = SpawnOptions(
             name: name,
-            os: .linux,
+            os: os,
             storage: storageURL,
             from: from,
             imagePath: image,
@@ -163,7 +169,7 @@ struct ExecCommand: ParsableCommand {
     @Argument(help: "Path to VM root directory")
     var vmPath: String
 
-    @Option(name: .long, help: "SSH login user (default: root)")
+    @Option(name: .long, help: "SSH login user (default: root for linux, current user for macOS)")
     var user: String?
 
     @Option(name: .long, help: "SSH key path")
