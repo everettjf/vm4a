@@ -74,6 +74,7 @@ Before running anything:
 | Check guest agent heartbeat | `vm4a agent status /path/to/bundle` |
 | Ping guest agent | `vm4a agent ping /path/to/bundle` |
 | Run as MCP server (stdio JSON-RPC) | `vm4a mcp` |
+| Run HTTP API server on localhost | `vm4a serve --port 7777` |
 
 ## Key workflows
 

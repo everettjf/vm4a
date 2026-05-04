@@ -27,11 +27,11 @@ VM4A 念作 **"VM for Agent"**，CLI 二进制叫 `vm4a`。
 
 ---
 
-## 当前状态 — v2.0 P1（Agent 原语 + MCP 已发布）
+## 当前状态 — v2.1（Agent 原语 + MCP + HTTP API + Python SDK）
 
-面向 Agent 的 CLI 原语已经**全部就绪**，并且 `vm4a` 现在可以作为 MCP server 被 Claude Code / Cursor / Cline 直接接入 —— 一行配置，AI 就能把 `spawn`/`exec`/`cp`/`fork`/`reset`/`list`/`ip`/`stop` 当成原生工具调用。
+面向 Agent 的 CLI 原语已经**全部就绪**，并且在同一个 core 上提供了三种程序化访问方式：
 
-| v2.0 已发布 | 用途 |
+| 已发布 | 用途 |
 |---|---|
 | `vm4a spawn` | 一条命令从 OCI 镜像（`--from`）或本地 ISO（`--image`）创建+启动 VM，可选 `--wait-ip` / `--wait-ssh` |
 | `vm4a exec` | SSH 进 guest 执行命令，返回 `{exit_code, stdout, stderr, duration_ms, timed_out}` |
@@ -39,8 +39,10 @@ VM4A 念作 **"VM for Agent"**，CLI 二进制叫 `vm4a`。
 | `vm4a fork` | APFS clonefile 克隆 bundle，可选自动启动（带快照恢复） |
 | `vm4a reset` | 停止 + 从 `.vzstate` 快照恢复 —— 给 try → fail → reset → retry 循环用 |
 | `vm4a mcp` | Stdio JSON-RPC 2.0 的 MCP server —— 可被任何支持 MCP 的客户端接入 |
+| `vm4a serve` | localhost 上的 HTTP REST API —— `/v1/spawn`、`/v1/exec`…… |
+| `pip install vm4a` | Python SDK，纯 stdlib 实现，无第三方依赖 |
 
-后续里程碑仍在设计中：`vm4a serve`（给 SDK 用的 HTTP API）、GUI Time Machine。详见[路线图](#路线图)。
+后续里程碑仍在设计中：GUI Time Machine、官方 OCI 模板、预热 VM 池。详见[路线图](#路线图)。
 
 ---
 
@@ -129,8 +131,9 @@ vm4a ssh               SSH 进 NAT VM
 vm4a agent status      读 guest 内 agent 的最新心跳（脚手架）
 vm4a agent ping        给 guest agent 发 ping（脚手架）
 
-Agent 集成（v2.0 P1）
+Agent 集成（v2.0 P1、v2.1）
 vm4a mcp               以 stdio MCP server 运行（接入 Claude Code / Cursor / Cline）
+vm4a serve             在 localhost 上跑 HTTP API server
 ```
 
 `vm4a <subcommand> --help` 看完整选项。
@@ -273,6 +276,49 @@ vm4a clone /tmp/vm4a/golden /tmp/vm4a/job-$CI_JOB_ID
 | `stop` | `{stopped, pid, forced, reason?}` |
 
 协议是按行分隔的 JSON-RPC 2.0（标准 MCP stdio transport，protocol version `2024-11-05`）。手动看一下 tool catalog：`printf '{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n' | vm4a mcp`。
+
+---
+
+## HTTP API + Python SDK
+
+非 MCP 客户端（CI 跑批、自定义 Python 脚本、其他语言绑定）可以走 localhost 上的 HTTP 接口。
+
+```bash
+# 启动 server
+vm4a serve --port 7777
+# 可选 bearer-token 鉴权: export VM4A_AUTH_TOKEN=...
+```
+
+```bash
+# 简单试一下
+curl -s http://127.0.0.1:7777/v1/health
+curl -s http://127.0.0.1:7777/v1/vms?storage=/tmp/vm4a
+```
+
+| 端点 | 请求体 | 返回 |
+|---|---|---|
+| `GET /v1/health` | — | `{status, version}` |
+| `POST /v1/spawn` | SpawnOptions JSON | SpawnOutcome |
+| `POST /v1/exec` | `{vm_path, command, ...}` | ExecResult |
+| `POST /v1/cp` | `{vm_path, source, destination, ...}` | ExecResult |
+| `POST /v1/fork` | `{source_path, destination_path, ...}` | ForkOutcome |
+| `POST /v1/reset` | `{vm_path, from, ...}` | ResetOutcome |
+| `GET /v1/vms` | `?storage=/path` | VMSummary 数组 |
+| `GET /v1/vms/ip` | `?path=/bundle` | Lease 数组 |
+| `POST /v1/vms/stop` | `{vm_path, timeout?}` | StopOutcome |
+
+Python SDK 是 HTTP API 的薄包装 —— 只用 stdlib，不依赖 `requests`/`httpx`：
+
+```python
+from vm4a import Client
+
+c = Client()  # http://127.0.0.1:7777
+vm = c.spawn(name="dev", from_="ghcr.io/yourorg/python-dev:latest", wait_ssh=True)
+out = c.exec(vm.path, ["python3", "-c", "print(1+1)"])
+print(out.exit_code, out.stdout)
+```
+
+完整的 SDK README 和 agent loop 示例见 [`sdk/python/`](sdk/python/)。
 
 ---
 
@@ -426,7 +472,7 @@ CLI 创建的 bundle 能在 GUI 里用，反之亦然。
 | v1.1 | 完整 VM 生命周期 + OCI 分发 + 快照（即原 EasyVM 的能力） | ✅ 已发布 |
 | v2.0 P0 | Agent CLI 原语（`spawn`/`exec`/`cp`/`fork`/`reset`） | ✅ 已发布 |
 | v2.0 P1 | MCP server，Claude Code / Cursor / Cline 直接接入 | ✅ 已发布 |
-| v2.1 | HTTP API + Python SDK | 计划中 |
+| v2.1 | HTTP API + Python SDK | ✅ 已发布 |
 | v2.2 | 官方维护的 OCI 模板（`vm4a/python-dev`、`vm4a/xcode-dev`、`vm4a/ubuntu-base`） | 计划中 |
 | v2.3 | GUI Time Machine —— session/timeline/diff 调试器 | 计划中 |
 | v2.4 | 预热 VM 池、网络沙盒策略、资源上限 | 计划中 |

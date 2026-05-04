@@ -27,11 +27,11 @@ VM4A is the codename **"VM for Agent"** — pronounced *"VM-for-A"*. The CLI is 
 
 ---
 
-## Status — v2.0 P1 (Agent primitives + MCP shipped)
+## Status — v2.1 (Agent primitives + MCP + HTTP API + Python SDK)
 
-The agent-first CLI primitives are **in**, and `vm4a` now also speaks MCP — register one binary with Claude Code / Cursor / Cline and they get `spawn`/`exec`/`cp`/`fork`/`reset`/`list`/`ip`/`stop` as native tools.
+The agent-first CLI primitives are **in**, plus three programmatic surfaces over the same core:
 
-| Shipped in v2.0 | What it does |
+| Shipped | What it does |
 |---|---|
 | `vm4a spawn` | One-shot create+start from an OCI image (`--from`) or local ISO (`--image`), with `--wait-ip` / `--wait-ssh` |
 | `vm4a exec` | SSH into the guest, run a command, return `{exit_code, stdout, stderr, duration_ms, timed_out}` |
@@ -39,8 +39,10 @@ The agent-first CLI primitives are **in**, and `vm4a` now also speaks MCP — re
 | `vm4a fork` | APFS clonefile a bundle and optionally auto-start it (with snapshot restore) |
 | `vm4a reset` | Stop + restore from a `.vzstate` snapshot — for try → fail → reset → retry loops |
 | `vm4a mcp` | Stdio JSON-RPC 2.0 MCP server — drop-in tool for any MCP-aware client |
+| `vm4a serve` | HTTP REST API on localhost — `/v1/spawn`, `/v1/exec`, … |
+| `pip install vm4a` | Python SDK that wraps the HTTP API (zero deps, stdlib only) |
 
-Still designing for later milestones: `vm4a serve` (HTTP API for SDKs), GUI Time Machine. See the [roadmap](#roadmap).
+Still designing for later milestones: GUI Time Machine, curated OCI templates, pre-warmed VM pools. See the [roadmap](#roadmap).
 
 ---
 
@@ -129,8 +131,9 @@ vm4a ssh               SSH into a NAT VM
 vm4a agent status      Read the last heartbeat from the in-guest agent (scaffold)
 vm4a agent ping        Send a ping command to the in-guest agent (scaffold)
 
-Agent integrations (v2.0 P1)
+Agent integrations (v2.0 P1, v2.1)
 vm4a mcp               Run as an MCP server over stdio (Claude Code / Cursor / Cline)
+vm4a serve             Run an HTTP API server on localhost
 ```
 
 Run `vm4a <subcommand> --help` for the full option list.
@@ -273,6 +276,49 @@ Once registered, the assistant sees the following tools:
 | `stop` | `{stopped, pid, forced, reason?}` |
 
 The protocol is JSON-RPC 2.0 framed by newlines (the standard MCP stdio transport, protocol version `2024-11-05`). Run `printf '{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n' | vm4a mcp` to inspect the tool catalog manually.
+
+---
+
+## HTTP API + Python SDK
+
+For non-MCP clients (CI runners, custom Python harnesses, language bindings), `vm4a` also exposes the same operations as a localhost HTTP server.
+
+```bash
+# Server
+vm4a serve --port 7777
+# Optional bearer-token auth: export VM4A_AUTH_TOKEN=...
+```
+
+```bash
+# Smoke test
+curl -s http://127.0.0.1:7777/v1/health
+curl -s http://127.0.0.1:7777/v1/vms?storage=/tmp/vm4a
+```
+
+| Endpoint | Body | Response |
+|---|---|---|
+| `GET /v1/health` | — | `{status, version}` |
+| `POST /v1/spawn` | SpawnOptions JSON | SpawnOutcome |
+| `POST /v1/exec` | `{vm_path, command, ...}` | ExecResult |
+| `POST /v1/cp` | `{vm_path, source, destination, ...}` | ExecResult |
+| `POST /v1/fork` | `{source_path, destination_path, ...}` | ForkOutcome |
+| `POST /v1/reset` | `{vm_path, from, ...}` | ResetOutcome |
+| `GET /v1/vms` | `?storage=/path` | VMSummary array |
+| `GET /v1/vms/ip` | `?path=/bundle` | Lease array |
+| `POST /v1/vms/stop` | `{vm_path, timeout?}` | StopOutcome |
+
+The Python SDK is a thin wrapper over the HTTP API — stdlib-only, no `requests`/`httpx` dependency:
+
+```python
+from vm4a import Client
+
+c = Client()  # http://127.0.0.1:7777
+vm = c.spawn(name="dev", from_="ghcr.io/yourorg/python-dev:latest", wait_ssh=True)
+out = c.exec(vm.path, ["python3", "-c", "print(1+1)"])
+print(out.exit_code, out.stdout)
+```
+
+Full SDK README and example agent loop in [`sdk/python/`](sdk/python/).
 
 ---
 
@@ -426,7 +472,7 @@ Branch on these without parsing stderr.
 | v1.1 | Solid VM lifecycle + OCI distribution + snapshots (the EasyVM foundation) | ✅ shipped |
 | v2.0 P0 | Agent CLI primitives (`spawn`, `exec`, `cp`, `fork`, `reset`) over the v1 commands | ✅ shipped |
 | v2.0 P1 | MCP server — drop-in tool for Claude Code / Cursor / Cline | ✅ shipped |
-| v2.1 | HTTP API + Python SDK | planned |
+| v2.1 | HTTP API + Python SDK | ✅ shipped |
 | v2.2 | Curated OCI templates (`vm4a/python-dev`, `vm4a/xcode-dev`, `vm4a/ubuntu-base`) | planned |
 | v2.3 | GUI Time Machine — session/timeline/diff viewer for agent runs | planned |
 | v2.4 | Pre-warmed VM pools, network sandbox policies, resource caps | planned |
