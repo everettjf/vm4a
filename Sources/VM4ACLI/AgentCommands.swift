@@ -1,32 +1,12 @@
 import ArgumentParser
 import Foundation
 import VM4ACore
-import Virtualization
-
-// MARK: - Helpers shared by agent commands
 
 private func ownExecutablePath() throws -> String {
     guard let path = Bundle.main.executablePath else {
         throw VM4AError.message("Cannot locate vm4a executable path")
     }
     return path
-}
-
-private func bundleExists(at url: URL) -> Bool {
-    FileManager.default.fileExists(atPath: url.appending(path: "config.json").path(percentEncoded: false))
-}
-
-private func resolveHost(model: VMModel, override: String?) throws -> String {
-    if let override, !override.isEmpty { return override }
-    if let lease = findLeasesForBundle(model).first { return lease.ipAddress }
-    throw VM4AError.notFound("DHCP lease for \(model.config.name); pass --host <ip> if bridged.")
-}
-
-private func defaultSSHUser(for os: VMOSType) -> String {
-    switch os {
-    case .linux:  return "root"
-    case .macOS:  return NSUserName()
-    }
 }
 
 // MARK: - vm4a spawn
@@ -105,57 +85,34 @@ struct SpawnCommand: AsyncParsableCommand {
 
     mutating func run() async throws {
         let storageURL = URL(fileURLWithPath: storage, isDirectory: true)
-        try FileManager.default.createDirectory(at: storageURL, withIntermediateDirectories: true)
-        let bundleURL = storageURL.appending(path: name, directoryHint: .isDirectory)
-
-        if !bundleExists(at: bundleURL) {
-            if let ref = from {
-                FileHandle.standardError.write(Data("Pulling \(ref) → \(bundleURL.path())\n".utf8))
-                let pulled = try await ociPull(reference: ref, into: storageURL) { line in
-                    FileHandle.standardError.write(Data("  \(line)\n".utf8))
-                }
-                if pulled.path() != bundleURL.path() {
-                    try FileManager.default.moveItem(at: pulled, to: bundleURL)
-                }
-            } else if let imagePath = image {
-                try createFreshBundle(at: bundleURL, imagePath: imagePath)
-            } else {
-                throw VM4AError.message("Bundle '\(bundleURL.path())' not found. Pass --from <oci-ref> or --image <path>.")
-            }
-        }
-
-        let model = try loadModel(rootPath: bundleURL)
-        let pid = try startVMWorker(
-            executable: try ownExecutablePath(),
-            vmPath: bundleURL.path(),
-            recovery: false,
-            restoreStateAt: restore.map { normalizePath($0) },
-            saveOnStopAt: saveOnStop.map { normalizePath($0) }
+        let memoryBytes = try memoryGB.map { try bytesFromGB($0, fieldName: "memory-gb") }
+        let diskBytes = try diskGB.map { try bytesFromGB($0, fieldName: "disk-gb") }
+        let options = SpawnOptions(
+            name: name,
+            os: os,
+            storage: storageURL,
+            from: from,
+            imagePath: image,
+            cpu: cpu,
+            memoryBytes: memoryBytes,
+            diskBytes: diskBytes,
+            bridgedInterface: bridgedInterface,
+            rosetta: rosetta,
+            restoreStateAt: restore,
+            saveOnStopAt: saveOnStop,
+            waitIP: waitIP,
+            waitSSH: waitSSH,
+            sshUser: sshUser,
+            sshKey: sshKey,
+            hostOverride: host,
+            waitTimeout: TimeInterval(waitTimeout)
         )
-
-        var resolvedIP: String? = host
-        var sshReady = false
-
-        if waitIP || waitSSH {
-            if resolvedIP == nil {
-                resolvedIP = waitForVMIP(model: model, timeout: TimeInterval(waitTimeout))
+        let outcome = try await runSpawn(
+            options: options,
+            executable: try ownExecutablePath(),
+            progress: { line in
+                FileHandle.standardError.write(Data("\(line)\n".utf8))
             }
-        }
-
-        if waitSSH, let ip = resolvedIP {
-            let user = sshUser ?? defaultSSHUser(for: model.config.type)
-            let opts = SSHOptions(user: user, keyPath: sshKey)
-            sshReady = waitForSSHReady(host: ip, options: opts, timeout: TimeInterval(waitTimeout))
-        }
-
-        let outcome = SpawnOutcome(
-            id: vmShortID(forPath: bundleURL),
-            name: model.config.name,
-            path: bundleURL.path(),
-            os: model.config.type.rawValue,
-            pid: pid,
-            ip: resolvedIP,
-            sshReady: sshReady
         )
 
         switch output {
@@ -165,73 +122,7 @@ struct SpawnCommand: AsyncParsableCommand {
             print("Spawned \(outcome.name) at \(outcome.path) (id=\(outcome.id))")
             if let pid = outcome.pid { print("  pid: \(pid)") }
             if let ip = outcome.ip { print("  ip:  \(ip)") }
-            if waitSSH { print("  ssh: \(sshReady ? "ready" : "not ready")") }
-        }
-    }
-
-    private func createFreshBundle(at bundleURL: URL, imagePath: String) throws {
-        let memoryBytes = try memoryGB.map { try bytesFromGB($0, fieldName: "memory-gb") }
-        let diskBytes = try diskGB.map { try bytesFromGB($0, fieldName: "disk-gb") }
-        var config = VMConfigModel.defaults(osType: os, name: name, cpu: cpu, memoryBytes: memoryBytes, diskBytes: diskBytes)
-        let normalizedImagePath = normalizePath(imagePath)
-
-        let network: [VMModelFieldNetworkDevice]
-        if let bridgedInterface {
-            let interfaces = availableBridgedInterfaces()
-            if interfaces.first(where: { $0.identifier == bridgedInterface }) == nil {
-                let available = interfaces.map { $0.identifier }.joined(separator: ", ")
-                throw VM4AError.message("Bridged interface '\(bridgedInterface)' not found. Available: \(available)")
-            }
-            network = [.init(type: .Bridged, identifier: bridgedInterface)]
-        } else {
-            network = config.networkDevices
-        }
-
-        let rosettaField: VMModelFieldRosetta?
-        if rosetta {
-            if os != .linux { throw VM4AError.message("--rosetta only applies to Linux guests") }
-            switch VMModelFieldRosetta.hostAvailability {
-            case .notSupported: throw VM4AError.hostUnsupported("Rosetta is not supported on this host")
-            case .notInstalled: throw VM4AError.rosettaNotInstalled
-            case .installed: break
-            }
-            rosettaField = .init(enabled: true)
-        } else {
-            rosettaField = nil
-        }
-
-        let storageDevices: [VMModelFieldStorageDevice]
-        if os == .linux, !normalizedImagePath.isEmpty {
-            storageDevices = config.storageDevices + [.init(type: .USB, size: 0, imagePath: normalizedImagePath)]
-        } else {
-            storageDevices = config.storageDevices
-        }
-
-        config = VMConfigModel(
-            type: config.type,
-            name: config.name,
-            remark: config.remark,
-            cpu: config.cpu,
-            memory: config.memory,
-            graphicsDevices: config.graphicsDevices,
-            storageDevices: storageDevices,
-            networkDevices: network,
-            pointingDevices: config.pointingDevices,
-            audioDevices: config.audioDevices,
-            directorySharingDevices: config.directorySharingDevices,
-            rosetta: rosettaField
-        )
-
-        try FileManager.default.createDirectory(at: bundleURL, withIntermediateDirectories: true)
-        let state = VMStateModel(imagePath: URL(fileURLWithPath: normalizedImagePath))
-        let model = VMModel(rootPath: bundleURL, config: config, state: state)
-        try writeJSON(config, to: model.configURL)
-        try writeJSON(state, to: model.stateURL)
-        try ensureDiskImagesExist(model: model)
-
-        if os == .linux {
-            try VZGenericMachineIdentifier().dataRepresentation.write(to: model.machineIdentifierURL)
-            _ = try VZEFIVariableStore(creatingVariableStoreAt: model.efiVariableStoreURL)
+            if waitSSH { print("  ssh: \(outcome.sshReady ? "ready" : "not ready")") }
         }
     }
 }
@@ -277,12 +168,14 @@ struct ExecCommand: ParsableCommand {
         guard !command.isEmpty else {
             throw VM4AError.message("Provide a command after `--`. Example: vm4a exec /path/to/vm -- whoami")
         }
-        let rootURL = URL(fileURLWithPath: vmPath, isDirectory: true)
-        let model = try loadModel(rootPath: rootURL)
-        let target = try resolveHost(model: model, override: host)
-        let sshUser = user ?? defaultSSHUser(for: model.config.type)
-        let opts = SSHOptions(user: sshUser, keyPath: key)
-        let result = sshExec(host: target, options: opts, command: command, timeout: TimeInterval(timeout))
+        let result = try runExec(options: ExecOptions(
+            vmPath: vmPath,
+            user: user,
+            key: key,
+            hostOverride: host,
+            timeout: TimeInterval(timeout),
+            command: command
+        ))
 
         switch output {
         case .json:
@@ -341,30 +234,16 @@ struct CpCommand: ParsableCommand {
     var output: OutputFormat = .text
 
     mutating func run() throws {
-        let rootURL = URL(fileURLWithPath: vmPath, isDirectory: true)
-        let model = try loadModel(rootPath: rootURL)
-        let target = try resolveHost(model: model, override: host)
-        let sshUser = user ?? defaultSSHUser(for: model.config.type)
-
-        let src = parseCopyEndpoint(source)
-        let dst = parseCopyEndpoint(destination)
-        let scpSource: String
-        let scpDestination: String
-        switch (src, dst) {
-        case (.host(let s), .guest(let g)):
-            scpSource = s
-            scpDestination = "\(sshUser)@\(target):\(g)"
-        case (.guest(let g), .host(let s)):
-            scpSource = "\(sshUser)@\(target):\(g)"
-            scpDestination = s
-        case (.host, .host):
-            throw VM4AError.message("cp: at least one side must be a guest path (prefix it with ':')")
-        case (.guest, .guest):
-            throw VM4AError.message("cp: copying between two guest paths is not supported in one call")
-        }
-
-        let opts = SSHOptions(user: sshUser, keyPath: key)
-        let result = scpCopy(options: opts, source: scpSource, destination: scpDestination, recursive: recursive, timeout: TimeInterval(timeout))
+        let result = try runCp(options: CpOptions(
+            vmPath: vmPath,
+            source: source,
+            destination: destination,
+            recursive: recursive,
+            user: user,
+            key: key,
+            hostOverride: host,
+            timeout: TimeInterval(timeout)
+        ))
 
         switch output {
         case .json:
@@ -381,7 +260,7 @@ struct CpCommand: ParsableCommand {
 
 // MARK: - vm4a fork
 
-struct ForkCommand: AsyncParsableCommand {
+struct ForkCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "fork",
         abstract: "Clone a VM bundle and optionally start it (with optional snapshot restore)",
@@ -421,52 +300,29 @@ struct ForkCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
-    mutating func run() async throws {
-        let src = URL(fileURLWithPath: sourcePath, isDirectory: true)
-        let dst = URL(fileURLWithPath: destinationPath, isDirectory: true)
-        guard FileManager.default.fileExists(atPath: src.path(percentEncoded: false)) else {
-            throw VM4AError.notFound("Source VM: \(src.path())")
-        }
-        _ = try cloneDirectory(from: src, to: dst)
-        let model = try loadModel(rootPath: dst)
-        clearPID(at: model.runPIDURL)
-        try? FileManager.default.removeItem(at: model.runLogURL)
-        try reidentifyVM(model: model)
-
-        var pid: Int32?
-        var ip: String?
-
-        if autoStart {
-            pid = try startVMWorker(
-                executable: try ownExecutablePath(),
-                vmPath: dst.path(),
-                restoreStateAt: fromSnapshot.map { normalizePath($0) }
-            )
-            if waitIP || waitSSH {
-                ip = waitForVMIP(model: model, timeout: TimeInterval(waitTimeout))
-            }
-            if waitSSH, let ip {
-                let user = sshUser ?? defaultSSHUser(for: model.config.type)
-                let opts = SSHOptions(user: user, keyPath: sshKey)
-                _ = waitForSSHReady(host: ip, options: opts, timeout: TimeInterval(waitTimeout))
-            }
-        }
-
-        let outcome = ForkOutcome(
-            path: dst.path(),
-            name: model.config.name,
-            started: autoStart,
-            pid: pid,
-            ip: ip
+    mutating func run() throws {
+        let outcome = try runFork(
+            options: ForkOptions(
+                sourcePath: sourcePath,
+                destinationPath: destinationPath,
+                fromSnapshot: fromSnapshot,
+                autoStart: autoStart,
+                waitIP: waitIP,
+                waitSSH: waitSSH,
+                sshUser: sshUser,
+                sshKey: sshKey,
+                waitTimeout: TimeInterval(waitTimeout)
+            ),
+            executable: try ownExecutablePath()
         )
 
         switch output {
         case .json:
             try writeJSONLine(outcome)
         case .text:
-            print("Forked \(src.path()) → \(dst.path())")
-            if autoStart, let pid { print("  started, pid \(pid)") }
-            if let ip { print("  ip:  \(ip)") }
+            print("Forked \(sourcePath) → \(outcome.path)")
+            if outcome.started, let pid = outcome.pid { print("  started, pid \(pid)") }
+            if let ip = outcome.ip { print("  ip:  \(ip)") }
         }
     }
 }
@@ -502,52 +358,24 @@ struct ResetCommand: ParsableCommand {
     var output: OutputFormat = .text
 
     mutating func run() throws {
-        let rootURL = URL(fileURLWithPath: vmPath, isDirectory: true)
-        let model = try loadModel(rootPath: rootURL)
-
-        if let pid = readPID(from: model.runPIDURL), isProcessRunning(pid: pid) {
-            _ = kill(pid, SIGTERM)
-            let deadline = Date().addingTimeInterval(TimeInterval(stopTimeout))
-            while Date() < deadline {
-                if !isProcessRunning(pid: pid) { break }
-                Thread.sleep(forTimeInterval: 0.25)
-            }
-            if isProcessRunning(pid: pid) {
-                _ = kill(pid, SIGKILL)
-                Thread.sleep(forTimeInterval: 0.5)
-            }
-            clearPID(at: model.runPIDURL)
-        }
-
-        let snapshotPath = normalizePath(from)
-        guard FileManager.default.fileExists(atPath: snapshotPath) else {
-            throw VM4AError.notFound("Snapshot file: \(snapshotPath)")
-        }
-
-        let pid = try startVMWorker(
-            executable: try ownExecutablePath(),
-            vmPath: vmPath,
-            restoreStateAt: snapshotPath
+        let outcome = try runReset(
+            options: ResetOptions(
+                vmPath: vmPath,
+                fromSnapshot: from,
+                waitIP: waitIP,
+                stopTimeout: TimeInterval(stopTimeout),
+                waitTimeout: TimeInterval(waitTimeout)
+            ),
+            executable: try ownExecutablePath()
         )
-        var ip: String?
-        if waitIP {
-            ip = waitForVMIP(model: model, timeout: TimeInterval(waitTimeout))
-        }
 
-        struct Outcome: Encodable {
-            let path: String
-            let restored: String
-            let pid: Int32?
-            let ip: String?
-        }
-        let outcome = Outcome(path: rootURL.path(), restored: snapshotPath, pid: pid, ip: ip)
         switch output {
         case .json:
             try writeJSONLine(outcome)
         case .text:
-            print("Reset \(rootURL.path()) from snapshot \(snapshotPath)")
-            if let pid { print("  pid: \(pid)") }
-            if let ip { print("  ip:  \(ip)") }
+            print("Reset \(outcome.path) from snapshot \(outcome.restored)")
+            if let pid = outcome.pid { print("  pid: \(pid)") }
+            if let ip = outcome.ip { print("  ip:  \(ip)") }
         }
     }
 }

@@ -5,29 +5,6 @@ import Virtualization
 
 extension VMOSType: ExpressibleByArgument {}
 
-func normalizePath(_ rawPath: String) -> String {
-    let expanded = (rawPath as NSString).expandingTildeInPath
-    if expanded.hasPrefix("/") {
-        return URL(fileURLWithPath: expanded).standardizedFileURL.path()
-    }
-    let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
-    return URL(fileURLWithPath: expanded, relativeTo: cwd).standardizedFileURL.path()
-}
-
-func bytesFromGB(_ gigabytes: Int, fieldName: String) throws -> UInt64 {
-    guard gigabytes > 0 else {
-        throw VM4AError.message("\(fieldName) must be greater than 0")
-    }
-    guard let gbValue = UInt64(exactly: gigabytes) else {
-        throw VM4AError.message("Invalid \(fieldName): \(gigabytes)")
-    }
-    let (bytes, overflow) = gbValue.multipliedReportingOverflow(by: 1024 * 1024 * 1024)
-    guard !overflow else {
-        throw VM4AError.message("\(fieldName) is too large: \(gigabytes) GB")
-    }
-    return bytes
-}
-
 enum OutputFormat: String, ExpressibleByArgument {
     case text
     case json
@@ -104,102 +81,32 @@ struct CreateCommand: ParsableCommand {
     var output: OutputFormat = .text
 
     mutating func run() throws {
-        if let cpu, cpu <= 0 {
-            throw VM4AError.message("cpu must be greater than 0")
-        }
         let storageURL = URL(fileURLWithPath: storage, isDirectory: true)
-        let rootPath = storageURL.appending(path: name, directoryHint: .isDirectory)
-
-        if FileManager.default.fileExists(atPath: rootPath.path(percentEncoded: false)) {
-            throw VM4AError.message("VM already exists at \(rootPath.path())")
-        }
-
         let memoryBytes = try memoryGB.map { try bytesFromGB($0, fieldName: "memory-gb") }
         let diskBytes = try diskGB.map { try bytesFromGB($0, fieldName: "disk-gb") }
-        var config = VMConfigModel.defaults(osType: os, name: name, cpu: cpu, memoryBytes: memoryBytes, diskBytes: diskBytes)
-        let normalizedImagePath = image.map(normalizePath)
-
-        let network: [VMModelFieldNetworkDevice]
-        if let bridgedInterface {
-            let interfaces = availableBridgedInterfaces()
-            if interfaces.first(where: { $0.identifier == bridgedInterface }) == nil {
-                let available = interfaces.map { $0.identifier }.joined(separator: ", ")
-                throw VM4AError.message("Bridged interface '\(bridgedInterface)' not found. Available: \(available)")
-            }
-            network = [.init(type: .Bridged, identifier: bridgedInterface)]
-        } else {
-            network = config.networkDevices
-        }
-
-        let rosettaField: VMModelFieldRosetta?
-        if rosetta {
-            if os != .linux {
-                throw VM4AError.message("--rosetta only applies to Linux guests")
-            }
-            switch VMModelFieldRosetta.hostAvailability {
-            case .notSupported:
-                throw VM4AError.message("Rosetta is not supported on this host")
-            case .notInstalled:
-                FileHandle.standardError.write(Data("warning: Rosetta is not installed. Install with: softwareupdate --install-rosetta --agree-to-license\n".utf8))
-            case .installed:
-                break
-            }
-            rosettaField = .init(enabled: true)
-        } else {
-            rosettaField = nil
-        }
-
-        let storageDevices: [VMModelFieldStorageDevice]
-        if os == .linux, let normalizedImagePath, !normalizedImagePath.isEmpty {
-            storageDevices = config.storageDevices + [.init(type: .USB, size: 0, imagePath: normalizedImagePath)]
-        } else {
-            storageDevices = config.storageDevices
-        }
-
-        if bridgedInterface != nil || rosettaField != nil || storageDevices.count != config.storageDevices.count {
-            config = VMConfigModel(
-                type: config.type,
-                name: config.name,
-                remark: config.remark,
-                cpu: config.cpu,
-                memory: config.memory,
-                graphicsDevices: config.graphicsDevices,
-                storageDevices: storageDevices,
-                networkDevices: network,
-                pointingDevices: config.pointingDevices,
-                audioDevices: config.audioDevices,
-                directorySharingDevices: config.directorySharingDevices,
-                rosetta: rosettaField
-            )
-        }
-
-        try FileManager.default.createDirectory(at: rootPath, withIntermediateDirectories: true)
-
-        let stateImagePath = normalizedImagePath ?? rootPath.path()
-        let state = VMStateModel(imagePath: URL(fileURLWithPath: stateImagePath))
-        let model = VMModel(rootPath: rootPath, config: config, state: state)
-        try writeJSON(config, to: model.configURL)
-        try writeJSON(state, to: model.stateURL)
-        try ensureDiskImagesExist(model: model)
-
-        if os == .linux {
-            let machineIdentifier = VZGenericMachineIdentifier()
-            try machineIdentifier.dataRepresentation.write(to: model.machineIdentifierURL)
-            _ = try VZEFIVariableStore(creatingVariableStoreAt: model.efiVariableStoreURL)
+        let outcome = try createBundle(options: CreateBundleOptions(
+            name: name,
+            os: os,
+            storage: storageURL,
+            imagePath: image,
+            cpu: cpu,
+            memoryBytes: memoryBytes,
+            diskBytes: diskBytes,
+            bridgedInterface: bridgedInterface,
+            rosetta: rosetta
+        ))
+        if let warning = outcome.rosettaWarning {
+            FileHandle.standardError.write(Data("warning: \(warning)\n".utf8))
         }
 
         switch output {
         case .json:
-            try writeJSONLine([
-                "path": rootPath.path(),
-                "name": name,
-                "os": os.rawValue,
-            ])
+            try writeJSONLine(outcome)
         case .text:
             if os == .macOS {
                 print("Created macOS VM skeleton. Complete installation using GUI flow to generate HardwareModel/AuxiliaryStorage.")
             }
-            print("Created VM: \(rootPath.path())")
+            print("Created VM: \(outcome.path)")
         }
     }
 }
