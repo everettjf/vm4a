@@ -87,6 +87,29 @@ struct CoreTests {
     }
 
     @Test
+    func storageDeviceLegacyDecodeDefaultsReadOnlyForUSB() throws {
+        let legacyUSB = """
+        {"type":"USB","size":0,"imagePath":"x.iso"}
+        """
+        let usb = try JSONDecoder().decode(VMModelFieldStorageDevice.self, from: Data(legacyUSB.utf8))
+        #expect(usb.readOnly == true)         // ISOs default to read-only
+
+        let legacyBlock = """
+        {"type":"Block","size":1024,"imagePath":"Disk.img"}
+        """
+        let block = try JSONDecoder().decode(VMModelFieldStorageDevice.self, from: Data(legacyBlock.utf8))
+        #expect(block.readOnly == false)      // root disks default to writable
+    }
+
+    @Test
+    func storageDeviceExplicitReadOnlyRoundTrips() throws {
+        let dev = VMModelFieldStorageDevice(type: .Block, size: 1024, imagePath: "Disk.img", readOnly: true)
+        let data = try JSONEncoder().encode(dev)
+        let decoded = try JSONDecoder().decode(VMModelFieldStorageDevice.self, from: data)
+        #expect(decoded.readOnly == true)
+    }
+
+    @Test
     func decodesLegacyConfigWithoutSchemaVersion() throws {
         let legacyJSON = """
         {

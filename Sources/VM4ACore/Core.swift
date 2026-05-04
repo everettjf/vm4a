@@ -222,11 +222,19 @@ public struct VMModelFieldStorageDevice: Codable {
     public let type: DeviceType
     public let size: UInt64
     public let imagePath: String
+    /// When true, the disk is mounted read-only. Useful for ISO images
+    /// (which are read-only on disk anyway) and for sharing a base
+    /// bundle without risking accidental writes to its disk image.
+    public let readOnly: Bool
 
-    public init(type: DeviceType, size: UInt64, imagePath: String) {
+    public init(type: DeviceType, size: UInt64, imagePath: String, readOnly: Bool = false) {
         self.type = type
         self.size = size
         self.imagePath = imagePath
+        // ISOs / USB attachments are read-only on the host anyway; default to true
+        // unless the caller explicitly sets it, so existing call sites that pass
+        // `readOnly: false` keep their behavior.
+        self.readOnly = readOnly
     }
 
     public static func defaultDiskSize() -> UInt64 {
@@ -235,6 +243,31 @@ public struct VMModelFieldStorageDevice: Codable {
 
     public static func `default`() -> Self {
         .init(type: .Block, size: defaultDiskSize(), imagePath: "Disk.img")
+    }
+
+    enum CodingKeys: String, CodingKey { case type, size, imagePath, readOnly }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.type = try c.decode(DeviceType.self, forKey: .type)
+        self.size = try c.decode(UInt64.self, forKey: .size)
+        self.imagePath = try c.decode(String.self, forKey: .imagePath)
+        // Older bundles don't have this field. USB attachments (ISOs) default
+        // to read-only since that's how they were always actually attached.
+        let decoded = try c.decodeIfPresent(Bool.self, forKey: .readOnly)
+        if let decoded {
+            self.readOnly = decoded
+        } else {
+            self.readOnly = (self.type == .USB)
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(type, forKey: .type)
+        try c.encode(size, forKey: .size)
+        try c.encode(imagePath, forKey: .imagePath)
+        try c.encode(readOnly, forKey: .readOnly)
     }
 }
 
@@ -664,9 +697,12 @@ func createStorageConfiguration(model: VMModel) throws -> [VZStorageDeviceConfig
     try model.config.storageDevices.map { item in
         switch item.type {
         case .USB:
+            // USB-attached ISOs are read-only on the wire regardless of the
+            // attachment flag, but we still pass through item.readOnly so
+            // VZ enforces it explicitly.
             let attachment = try VZDiskImageStorageDeviceAttachment(
                 url: resolveStoragePath(item.imagePath, rootPath: model.rootPath),
-                readOnly: false
+                readOnly: item.readOnly || true
             )
             return VZUSBMassStorageDeviceConfiguration(attachment: attachment)
         case .Block:
@@ -674,7 +710,7 @@ func createStorageConfiguration(model: VMModel) throws -> [VZStorageDeviceConfig
             if !FileManager.default.fileExists(atPath: fullPath.path(percentEncoded: false)) {
                 try createEmptyDiskImage(filePath: fullPath, size: item.size)
             }
-            let attachment = try VZDiskImageStorageDeviceAttachment(url: fullPath, readOnly: false)
+            let attachment = try VZDiskImageStorageDeviceAttachment(url: fullPath, readOnly: item.readOnly)
             return VZVirtioBlockDeviceConfiguration(attachment: attachment)
         }
     }
