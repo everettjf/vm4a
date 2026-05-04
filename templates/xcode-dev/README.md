@@ -1,37 +1,42 @@
-# xcode-dev — macOS + Xcode CLI tools
+# xcode-dev — macOS + Xcode CLI tools + Homebrew
 
-**Manual build.** Unlike the Linux templates, the macOS guest install requires interactive setup that the CLI skeleton can't drive end-to-end. Use the GUI app to produce the base bundle, then run `provision.sh` over SSH to bake the development tools.
+**Build is partly automated.** Apple's `VZMacOSInstaller` handles the OS install but the resulting VM still boots into Setup Assistant, which has no documented scripted-skip path. So you create the base bundle *once* via the GUI (download IPSW + first-boot user creation), then `build.sh` takes over — uploads `provision.sh`, installs Xcode CLT + Homebrew + brew tools, snapshots, and pushes.
 
-## Steps
+## One-time base setup (manual)
 
-1. **GUI install.** Open VM4A.app → File → New macOS VM → Sequoia (or your preferred version). Wait for first boot. Create a user, enable Remote Login (System Settings → General → Sharing), note the IP from `vm4a ip`.
+1. Open VM4A.app → File → New macOS VM → pick a Sequoia (or newer) IPSW.
+2. Wait for first boot. Create the user account, **enable Remote Login** (System Settings → General → Sharing).
+3. Note the SSH username you just created and the bundle's path on disk.
 
-2. **Verify SSH.**
-   ```bash
-   vm4a exec /path/to/macos-vm --user youruser -- whoami
-   ```
+## Provisioning + push (automated)
 
-3. **Provision.**
-   ```bash
-   vm4a cp /path/to/macos-vm --user youruser ./provision.sh :/tmp/provision.sh
-   vm4a exec /path/to/macos-vm --user youruser --timeout 1800 -- \
-       bash -lc 'sudo bash /tmp/provision.sh'
-   ```
+```bash
+export VM4A_REGISTRY_USER=youruser
+export VM4A_REGISTRY_PASSWORD=ghp_xxx     # PAT with write:packages
+export XCODE_DEV_BASE_BUNDLE=~/Library/Containers/.../macos-base
+export XCODE_DEV_SSH_USER=youruser
+# Optional: export XCODE_DEV_SSH_KEY=~/.ssh/vm4a_ed25519
 
-4. **Snapshot + push.**
-   ```bash
-   # Re-run with --save-on-stop armed:
-   vm4a stop /path/to/macos-vm
-   vm4a run /path/to/macos-vm --save-on-stop /path/to/macos-vm/clean.vzstate &
-   sleep 60
-   vm4a stop /path/to/macos-vm
-   vm4a push /path/to/macos-vm ghcr.io/everettjf/vm4a-templates/xcode-dev:latest
-   ```
+./build.sh
+```
 
-## What `provision.sh` installs
+`build.sh` will:
 
-- Xcode Command Line Tools (`xcode-select --install` flow, scripted)
-- Homebrew (default `/opt/homebrew` install)
-- `git`, `ripgrep`, `jq`
+1. Start the base bundle with `--save-on-stop` armed
+2. Wait for SSH to respond
+3. Upload `provision.sh` and run it (Xcode CLT + Homebrew + brew install of `git`, `ripgrep`, `jq`)
+4. Stop the VM, which writes `clean.vzstate` to the bundle
+5. Push to `ghcr.io/everettjf/vm4a-templates/xcode-dev:<date>` and `:latest`
 
-For full Xcode (the IDE), download the `.xip` interactively the first time, then re-snapshot.
+The provisioning step takes 10–20 minutes the first time because Xcode Command Line Tools and Homebrew are large.
+
+## Why isn't the base install scripted?
+
+Apple's macOS guest first-boot has two stages that need cooperation from inside the VM:
+
+1. **Setup Assistant** asks for region, Apple ID, user account, etc. There's no public API to skip it from outside the VM.
+2. **Remote Login** is off by default. SSH can't be used until the user enables it interactively.
+
+Both could in theory be addressed by pre-baking auxiliary plists into `auxiliaryStorage` (a la `osx-provisioner`-style tools), but Apple has not documented this surface, and what's possible has changed across macOS versions. Until Apple ships an official answer-file path or an MDM-style remote enrolment SDK that vm4a can drive, this manual base step is the best we can do.
+
+If you have a working autounattend recipe for a current macOS, open an issue or PR — we'd love to ship a fully automated `build-from-ipsw.sh`.
