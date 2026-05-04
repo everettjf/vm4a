@@ -134,6 +134,13 @@ vm4a agent ping        给 guest agent 发 ping（脚手架）
 Agent 集成（v2.0 P1、v2.1）
 vm4a mcp               以 stdio MCP server 运行（接入 Claude Code / Cursor / Cline）
 vm4a serve             在 localhost 上跑 HTTP API server
+
+会话 + 池（v2.3 + v2.4 基础设施）
+vm4a session list      列出所有 agent 运行会话
+vm4a session show      按时间顺序打印一个会话的事件
+vm4a pool create       保存一个池定义
+vm4a pool spawn        从池定义生成一台新 VM
+vm4a pool list         列出已保存的池
 ```
 
 `vm4a <subcommand> --help` 看完整选项。
@@ -341,6 +348,38 @@ vm4a spawn dev --from ghcr.io/everettjf/vm4a-templates/python-dev:latest \
 
 ---
 
+## 会话 —— 记录 Agent 运行轨迹
+
+给任何 agent 原语（`spawn`/`exec`/`cp`/`fork`/`reset`）加 `--session <id>`，`vm4a` 就会往 `<bundle>/.vm4a-sessions/<id>.jsonl` 追加一条 JSONL 事件。每条事件包含 `{seq, timestamp, kind, vmPath, success, durationMs, summary, args, outcome}`。
+
+```bash
+SID="run-$(date +%s)"
+vm4a fork /tmp/vm4a/dev /tmp/vm4a/task-1 --auto-start --from-snapshot \
+    /tmp/vm4a/dev/clean.vzstate --wait-ssh --session $SID
+vm4a exec /tmp/vm4a/task-1 --session $SID -- python3 /work/step.py
+vm4a session show $SID --bundle /tmp/vm4a/task-1
+# ✓ #1  2026-05-03T19:45:00Z  3142ms  fork /tmp/vm4a/dev → /tmp/vm4a/task-1 (started)
+# ✓ #2  2026-05-03T19:45:08Z   712ms  exec python3 → exit 0
+```
+
+这是 v2.3 GUI Time Machine（时间线视图 + 快照 diff）的数据基础。目前消费者只有 CLI。
+
+## 池 —— 用定义批量生成任务 VM
+
+先定义"怎么生成一台任务 VM"，之后每个任务调一次 `vm4a pool spawn` 即可：
+
+```bash
+vm4a pool create py --base /tmp/vm4a/python-dev \
+    --snapshot /tmp/vm4a/python-dev/clean.vzstate \
+    --prefix task --storage /tmp/vm4a-tasks
+
+vm4a pool spawn py --wait-ssh        # → /tmp/vm4a-tasks/task-<n>
+```
+
+定义存在 `~/.vm4a/pools/<name>.json`。当前 `pool spawn` 等价于 `fork --auto-start --from-snapshot`；真正的预热池运行时（提前生成 N 台空闲 VM、毫秒级取一台、后台自动补）放在 v2.4。
+
+---
+
 ## 通过 OCI registry 分发
 
 bundle 打包成单个 `tar.gz` 层，media type 是 `application/vnd.vm4a.bundle.v1.tar+gzip`，配一个小的 JSON config blob。任何 Docker Registry v2 兼容的 registry 都能用（GHCR、Docker Hub、ECR、Harbor、私有部署）。
@@ -493,8 +532,8 @@ CLI 创建的 bundle 能在 GUI 里用，反之亦然。
 | v2.0 P1 | MCP server，Claude Code / Cursor / Cline 直接接入 | ✅ 已发布 |
 | v2.1 | HTTP API + Python SDK | ✅ 已发布 |
 | v2.2 | 官方维护的 OCI 模板（`ubuntu-base`、`python-dev`、`xcode-dev`） | ✅ 已发布（构建脚本 + CI） |
-| v2.3 | GUI Time Machine —— session/timeline/diff 调试器 | 计划中 |
-| v2.4 | 预热 VM 池、网络沙盒策略、资源上限 | 计划中 |
+| v2.3 | GUI Time Machine —— session/timeline/diff 调试器 | 🛠 CLI 基础设施已完成（`vm4a session`），GUI 待做 |
+| v2.4 | 预热 VM 池、网络沙盒策略、资源上限 | 🛠 池定义已完成（`vm4a pool`），预热运行时 + 沙盒待做 |
 
 有用例想推动优先级，开 issue 讨论。
 

@@ -134,6 +134,13 @@ vm4a agent ping        Send a ping command to the in-guest agent (scaffold)
 Agent integrations (v2.0 P1, v2.1)
 vm4a mcp               Run as an MCP server over stdio (Claude Code / Cursor / Cline)
 vm4a serve             Run an HTTP API server on localhost
+
+Sessions + pools (v2.3 + v2.4 foundations)
+vm4a session list      List agent run sessions
+vm4a session show      Print events in a session, in order
+vm4a pool create       Save a pool definition
+vm4a pool spawn        Mint a fresh per-task VM from a pool definition
+vm4a pool list         List saved pools
 ```
 
 Run `vm4a <subcommand> --help` for the full option list.
@@ -341,6 +348,38 @@ Recipes and the CI pipeline that rebuilds them monthly live in [`templates/`](te
 
 ---
 
+## Sessions — recording agent runs
+
+Pass `--session <id>` to any agent primitive (`spawn`, `exec`, `cp`, `fork`, `reset`) and `vm4a` appends a JSONL event to `<bundle>/.vm4a-sessions/<id>.jsonl`. Each event is `{seq, timestamp, kind, vmPath, success, durationMs, summary, args, outcome}`.
+
+```bash
+SID="run-$(date +%s)"
+vm4a fork /tmp/vm4a/dev /tmp/vm4a/task-1 --auto-start --from-snapshot \
+    /tmp/vm4a/dev/clean.vzstate --wait-ssh --session $SID
+vm4a exec /tmp/vm4a/task-1 --session $SID -- python3 /work/step.py
+vm4a session show $SID --bundle /tmp/vm4a/task-1
+# ✓ #1  2026-05-03T19:45:00Z  3142ms  fork /tmp/vm4a/dev → /tmp/vm4a/task-1 (started)
+# ✓ #2  2026-05-03T19:45:08Z   712ms  exec python3 → exit 0
+```
+
+This is the data foundation for the v2.3 GUI Time Machine (timeline view + snapshot diff). Today the CLI is the only consumer.
+
+## Pools — minting per-task VMs from a definition
+
+Define how to spawn a fresh per-task VM once, then call `vm4a pool spawn` for each task:
+
+```bash
+vm4a pool create py --base /tmp/vm4a/python-dev \
+    --snapshot /tmp/vm4a/python-dev/clean.vzstate \
+    --prefix task --storage /tmp/vm4a-tasks
+
+vm4a pool spawn py --wait-ssh        # → /tmp/vm4a-tasks/task-<n>
+```
+
+Definitions live in `~/.vm4a/pools/<name>.json`. Today `pool spawn` is equivalent to `fork --auto-start --from-snapshot`; the warm-pool runtime (idle pre-spawned VMs handed out in milliseconds, refilled in the background) ships in v2.4.
+
+---
+
 ## Distribution via OCI registries
 
 Bundles pack into a single `tar.gz` layer with media type `application/vnd.vm4a.bundle.v1.tar+gzip`, plus a small JSON config blob. Any Docker Registry v2 compatible registry works (GHCR, Docker Hub, ECR, Harbor, in-house).
@@ -493,8 +532,8 @@ Branch on these without parsing stderr.
 | v2.0 P1 | MCP server — drop-in tool for Claude Code / Cursor / Cline | ✅ shipped |
 | v2.1 | HTTP API + Python SDK | ✅ shipped |
 | v2.2 | Curated OCI templates (`ubuntu-base`, `python-dev`, `xcode-dev`) | ✅ shipped (recipes + CI) |
-| v2.3 | GUI Time Machine — session/timeline/diff viewer for agent runs | planned |
-| v2.4 | Pre-warmed VM pools, network sandbox policies, resource caps | planned |
+| v2.3 | GUI Time Machine — session/timeline/diff viewer for agent runs | 🛠 CLI foundation in (`vm4a session`); GUI pending |
+| v2.4 | Pre-warmed VM pools, network sandbox policies, resource caps | 🛠 pool definitions in (`vm4a pool`); warm runtime + sandbox pending |
 
 Open an issue with your use case if you want to weigh in on prioritization.
 

@@ -75,6 +75,10 @@ Before running anything:
 | Ping guest agent | `vm4a agent ping /path/to/bundle` |
 | Run as MCP server (stdio JSON-RPC) | `vm4a mcp` |
 | Run HTTP API server on localhost | `vm4a serve --port 7777` |
+| Tag operations into a session for replay/inspection | `vm4a exec ... --session run-42` |
+| List/show recorded sessions | `vm4a session list`, `vm4a session show <id>` |
+| Define a per-task spawn template | `vm4a pool create py --base /path/to/golden --snapshot clean.vzstate` |
+| Mint a fresh task VM from a pool | `vm4a pool spawn py --wait-ssh` |
 
 ## Key workflows
 

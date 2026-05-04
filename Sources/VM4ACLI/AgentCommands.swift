@@ -83,8 +83,12 @@ struct SpawnCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
+    @Option(name: .long, help: "Append a session event to <bundle>/.vm4a-sessions/<id>.jsonl")
+    var session: String?
+
     mutating func run() async throws {
         let storageURL = URL(fileURLWithPath: storage, isDirectory: true)
+        let started = Date()
         let memoryBytes = try memoryGB.map { try bytesFromGB($0, fieldName: "memory-gb") }
         let diskBytes = try diskGB.map { try bytesFromGB($0, fieldName: "disk-gb") }
         let options = SpawnOptions(
@@ -113,6 +117,22 @@ struct SpawnCommand: AsyncParsableCommand {
             progress: { line in
                 FileHandle.standardError.write(Data("\(line)\n".utf8))
             }
+        )
+
+        recordSessionEvent(
+            id: session,
+            kind: "spawn",
+            vmPath: outcome.path,
+            args: [
+                "name": .string(name),
+                "os": .string(os.rawValue),
+                "from": from.map { .string($0) } ?? .null,
+                "image": image.map { .string($0) } ?? .null
+            ],
+            outcome: try? jsonValue(outcome),
+            success: true,
+            durationMs: Int(Date().timeIntervalSince(started) * 1000),
+            summary: "spawn \(outcome.name) → ip=\(outcome.ip ?? "-") ssh=\(outcome.sshReady)"
         )
 
         switch output {
@@ -161,6 +181,9 @@ struct ExecCommand: ParsableCommand {
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
+    @Option(name: .long, help: "Append a session event to <bundle>/.vm4a-sessions/<id>.jsonl")
+    var session: String?
+
     @Argument(parsing: .captureForPassthrough, help: "Command and arguments to run in the VM")
     var command: [String] = []
 
@@ -176,6 +199,17 @@ struct ExecCommand: ParsableCommand {
             timeout: TimeInterval(timeout),
             command: command
         ))
+
+        recordSessionEvent(
+            id: session,
+            kind: "exec",
+            vmPath: vmPath,
+            args: ["command": .array(command.map { .string($0) })],
+            outcome: try? jsonValue(result),
+            success: result.exitCode == 0,
+            durationMs: result.durationMs,
+            summary: "exec \(command.first ?? "") → exit \(result.exitCode)\(result.timedOut ? " (timed out)" : "")"
+        )
 
         switch output {
         case .json:
@@ -233,6 +267,9 @@ struct CpCommand: ParsableCommand {
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
+    @Option(name: .long, help: "Append a session event to <bundle>/.vm4a-sessions/<id>.jsonl")
+    var session: String?
+
     mutating func run() throws {
         let result = try runCp(options: CpOptions(
             vmPath: vmPath,
@@ -244,6 +281,21 @@ struct CpCommand: ParsableCommand {
             hostOverride: host,
             timeout: TimeInterval(timeout)
         ))
+
+        recordSessionEvent(
+            id: session,
+            kind: "cp",
+            vmPath: vmPath,
+            args: [
+                "source": .string(source),
+                "destination": .string(destination),
+                "recursive": .bool(recursive)
+            ],
+            outcome: try? jsonValue(result),
+            success: result.exitCode == 0,
+            durationMs: result.durationMs,
+            summary: "cp \(source) → \(destination) (exit \(result.exitCode))"
+        )
 
         switch output {
         case .json:
@@ -300,7 +352,11 @@ struct ForkCommand: ParsableCommand {
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
+    @Option(name: .long, help: "Append a session event to <bundle>/.vm4a-sessions/<id>.jsonl")
+    var session: String?
+
     mutating func run() throws {
+        let started = Date()
         let outcome = try runFork(
             options: ForkOptions(
                 sourcePath: sourcePath,
@@ -314,6 +370,21 @@ struct ForkCommand: ParsableCommand {
                 waitTimeout: TimeInterval(waitTimeout)
             ),
             executable: try ownExecutablePath()
+        )
+
+        recordSessionEvent(
+            id: session,
+            kind: "fork",
+            vmPath: outcome.path,
+            args: [
+                "source_path": .string(sourcePath),
+                "destination_path": .string(destinationPath),
+                "auto_start": .bool(autoStart)
+            ],
+            outcome: try? jsonValue(outcome),
+            success: true,
+            durationMs: Int(Date().timeIntervalSince(started) * 1000),
+            summary: "fork \(sourcePath) → \(outcome.path)\(outcome.started ? " (started)" : "")"
         )
 
         switch output {
@@ -357,7 +428,11 @@ struct ResetCommand: ParsableCommand {
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
+    @Option(name: .long, help: "Append a session event to <bundle>/.vm4a-sessions/<id>.jsonl")
+    var session: String?
+
     mutating func run() throws {
+        let started = Date()
         let outcome = try runReset(
             options: ResetOptions(
                 vmPath: vmPath,
@@ -367,6 +442,17 @@ struct ResetCommand: ParsableCommand {
                 waitTimeout: TimeInterval(waitTimeout)
             ),
             executable: try ownExecutablePath()
+        )
+
+        recordSessionEvent(
+            id: session,
+            kind: "reset",
+            vmPath: outcome.path,
+            args: ["from": .string(from)],
+            outcome: try? jsonValue(outcome),
+            success: true,
+            durationMs: Int(Date().timeIntervalSince(started) * 1000),
+            summary: "reset \(outcome.path) ← \(outcome.restored)"
         )
 
         switch output {
