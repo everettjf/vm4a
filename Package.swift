@@ -10,7 +10,8 @@ let package = Package(
     products: [
         .library(name: "VM4ACore", targets: ["VM4ACore"]),
         .executable(name: "vm4a", targets: ["vm4a"]),
-        .executable(name: "vm4a-guest", targets: ["vm4a-guest"])
+        .executable(name: "vm4a-guest", targets: ["vm4a-guest"]),
+        .executable(name: "vm4a-sessions", targets: ["vm4a-sessions"])
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.5.0")
@@ -32,6 +33,11 @@ let package = Package(
             name: "vm4a-guest",
             dependencies: ["VM4ACore"],
             path: "Sources/VM4AGuest"
+        ),
+        .executableTarget(
+            name: "vm4a-sessions",
+            dependencies: ["VM4ACore"],
+            path: "Sources/VM4ASessions"
         ),
         .testTarget(
             name: "VM4ACoreTests",

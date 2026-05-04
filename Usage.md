@@ -292,7 +292,15 @@ vm4a session show $SID --bundle /tmp/vm4a/task-1
 vm4a session list --bundle /tmp/vm4a/task-1
 ```
 
-The events are append-only JSONL; you can `tail -f` the file during a long run. The v2.3 GUI Time Machine view will read these files as its data source.
+The events are append-only JSONL; you can `tail -f` the file during a long run.
+
+For a graphical timeline view, run `vm4a-sessions` (built alongside `vm4a`):
+
+```bash
+swift run vm4a-sessions       # or: ./.build/release/vm4a-sessions
+```
+
+A SwiftUI window opens listing every discovered session in the sidebar; clicking one shows the events as a timeline with expandable args/outcome panels. Cmd-R refreshes after a fresh agent run.
 
 > Today the CLI only writes events on the success path. A throwing call leaves no log entry — set things up so a missing session file means "the agent didn't reach the recorder", not "everything succeeded".
 

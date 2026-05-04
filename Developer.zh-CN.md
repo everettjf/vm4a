@@ -261,7 +261,7 @@ OCI 模板按月通过 `.github/workflows/templates.yml` 在自托管 Apple Sili
 
 - **`--session` 只记录成功路径。** throw 的调用不会留下日志。把每个 runner 在 CLI 里的调用包到 `do/catch`（或 `defer`）里、记一条 error 事件 —— 改动小、可控
 - **池的 warm runtime。** `vm4a pool spawn` 现在只是 `fork` 的薄壳。真正的"提前预热 N 台、取一台、后台补"daemon（大概是 `vm4a pool serve` 后台进程）是 v2.4 剩下的部分
-- **GUI Time Machine 视图。** CLI 写 JSONL 事件了，SwiftUI 那边还没写时间线和快照 diff 视图。数据形状见 `Sources/VM4ACore/Sessions.swift`
+- **主 GUI app 的 Time Machine 视图。** 独立的 `vm4a-sessions` SwiftUI app 已经通过 SwiftPM 发布（`Sources/VM4ASessions/`），可以列出 sessions、按时间线展示事件、展开 args/outcome 面板。把这两个 view 集成进 `VM4A.app` 本身只需要在 Xcode 里把两个 `.swift` 文件拖进 Detail group、注册一个 sidebar 入口；推迟是因为 Xcode 项目有两个 target，pbxproj 编辑还是在 IDE 里做更稳。
 - **网络沙盒。** `--network none|host|egress-only` flag 还没有。当前只有 NAT 和 bridged；要"完全无网"或"只能出站"得在 runner 里加 packet filter 规则
 - **超出 CPU/内存/磁盘大小的资源 cap。** VZ 在创建时支持 `cpuCount`、`memorySize`、磁盘镜像大小（已经通过 `--cpu`、`--memory-gb`、`--disk-gb` 暴露），以及每个 attachment 的 read-only（已通过 `VMModelFieldStorageDevice.readOnly` 暴露，ISO/USB 默认 `true`）。VZ **不**支持、因此 macOS 在用户态无法实现的：每 VM 的 CPU share/配额、内存软限制、磁盘 IO 带宽、网络带宽、每 VM 文件系统配额。这些不应该加 CLI flag，因为加了也是骗用户。
 - **`xcode-dev` 模板的 `build.sh`。** 缺失，因为 macOS guest 现在没法 headless 安装；得先 GUI 安装 base，再用 `provision.sh` 走 SSH

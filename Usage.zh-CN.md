@@ -292,7 +292,15 @@ vm4a session show $SID --bundle /tmp/vm4a/task-1
 vm4a session list --bundle /tmp/vm4a/task-1
 ```
 
-事件追加写入 JSONL，长跑时可以 `tail -f`。v2.3 的 GUI Time Machine 视图会用这些文件作为数据源。
+事件追加写入 JSONL，长跑时可以 `tail -f`。
+
+可视化时间线视图：运行 `vm4a-sessions`（和 `vm4a` 一起构建）：
+
+```bash
+swift run vm4a-sessions       # 或: ./.build/release/vm4a-sessions
+```
+
+会打开一个 SwiftUI 窗口，左侧列表展示发现的所有 session，点击之后右侧时间线展示事件，支持展开 args / outcome 面板。Cmd-R 刷新（跑完新 agent 任务后用）。
 
 > 当前版本 CLI 只在成功路径写事件，throw 的调用不会留下日志条目。把"缺失的 session 文件"理解为"Agent 没跑到记录器那一步"，而不是"全成功了"。
 
