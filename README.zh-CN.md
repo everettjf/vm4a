@@ -27,19 +27,20 @@ VM4A 念作 **"VM for Agent"**，CLI 二进制叫 `vm4a`。
 
 ---
 
-## 当前状态 — v2.0 P0（Agent 原语已发布）
+## 当前状态 — v2.0 P1（Agent 原语 + MCP 已发布）
 
-面向 Agent 的 CLI 原语已经**全部就绪**。一个二进制就能从"我要个干净机器"跑到"我拿到 guest 里命令的 JSON 输出"，不用写任何胶水。
+面向 Agent 的 CLI 原语已经**全部就绪**，并且 `vm4a` 现在可以作为 MCP server 被 Claude Code / Cursor / Cline 直接接入 —— 一行配置，AI 就能把 `spawn`/`exec`/`cp`/`fork`/`reset`/`list`/`ip`/`stop` 当成原生工具调用。
 
-| v2.0 P0 已发布 | 用途 |
+| v2.0 已发布 | 用途 |
 |---|---|
 | `vm4a spawn` | 一条命令从 OCI 镜像（`--from`）或本地 ISO（`--image`）创建+启动 VM，可选 `--wait-ip` / `--wait-ssh` |
 | `vm4a exec` | SSH 进 guest 执行命令，返回 `{exit_code, stdout, stderr, duration_ms, timed_out}` |
 | `vm4a cp` | SCP 双向文件传输 —— `:` 前缀标识 guest 路径 |
 | `vm4a fork` | APFS clonefile 克隆 bundle，可选自动启动（带快照恢复） |
 | `vm4a reset` | 停止 + 从 `.vzstate` 快照恢复 —— 给 try → fail → reset → retry 循环用 |
+| `vm4a mcp` | Stdio JSON-RPC 2.0 的 MCP server —— 可被任何支持 MCP 的客户端接入 |
 
-后续里程碑仍在设计中：`vm4a mcp`（给 Claude Code / Cursor 用的 MCP server）、`vm4a serve`（给 SDK 用的 HTTP API）、GUI Time Machine。详见[路线图](#路线图)。
+后续里程碑仍在设计中：`vm4a serve`（给 SDK 用的 HTTP API）、GUI Time Machine。详见[路线图](#路线图)。
 
 ---
 
@@ -127,6 +128,9 @@ vm4a ip                查 NAT VM 的 IP（解析 Apple 的 DHCP leases）
 vm4a ssh               SSH 进 NAT VM
 vm4a agent status      读 guest 内 agent 的最新心跳（脚手架）
 vm4a agent ping        给 guest agent 发 ping（脚手架）
+
+Agent 集成（v2.0 P1）
+vm4a mcp               以 stdio MCP server 运行（接入 Claude Code / Cursor / Cline）
 ```
 
 `vm4a <subcommand> --help` 看完整选项。
@@ -233,6 +237,42 @@ vm4a ssh  /tmp/vm4a/demo --user ubuntu -- -L 8080:localhost:8080
 ```bash
 vm4a clone /tmp/vm4a/golden /tmp/vm4a/job-$CI_JOB_ID
 ```
+
+---
+
+## 接入 Claude Code / Cursor / Cline（MCP）
+
+把 `vm4a` 注册为 MCP server，AI 助手就能把每一个 agent 原语当作可调用的工具用 —— 不用写胶水代码、不用 spawn shell 命令。
+
+**Claude Code** —— 在项目级或用户级 `.mcp.json` 里加：
+
+```json
+{
+  "mcpServers": {
+    "vm4a": {
+      "command": "vm4a",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+**Cursor** —— 同样的配置写到 `~/.cursor/mcp.json`。**Cline** —— 在 Cline 设置面板的 "MCP Servers" 里添加。
+
+注册之后，AI 助手能看到的工具：
+
+| 工具 | 返回 |
+|---|---|
+| `spawn` | `{id, name, path, os, pid, ip, ssh_ready}` |
+| `exec` | `{exit_code, stdout, stderr, duration_ms, timed_out}` |
+| `cp` | 同 `exec`（底层走 scp） |
+| `fork` | `{path, name, started, pid, ip}` |
+| `reset` | `{path, restored, pid, ip}` |
+| `list` | `{id, name, path, os, status, pid, ip}` 数组 |
+| `ip` | `{ip, mac, name?}` 数组 |
+| `stop` | `{stopped, pid, forced, reason?}` |
+
+协议是按行分隔的 JSON-RPC 2.0（标准 MCP stdio transport，protocol version `2024-11-05`）。手动看一下 tool catalog：`printf '{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n' | vm4a mcp`。
 
 ---
 
@@ -385,7 +425,7 @@ CLI 创建的 bundle 能在 GUI 里用，反之亦然。
 | --- | --- | --- |
 | v1.1 | 完整 VM 生命周期 + OCI 分发 + 快照（即原 EasyVM 的能力） | ✅ 已发布 |
 | v2.0 P0 | Agent CLI 原语（`spawn`/`exec`/`cp`/`fork`/`reset`） | ✅ 已发布 |
-| v2.0 P1 | MCP server，Claude Code / Cursor / Cline 直接接入 | 🛠 设计中 |
+| v2.0 P1 | MCP server，Claude Code / Cursor / Cline 直接接入 | ✅ 已发布 |
 | v2.1 | HTTP API + Python SDK | 计划中 |
 | v2.2 | 官方维护的 OCI 模板（`vm4a/python-dev`、`vm4a/xcode-dev`、`vm4a/ubuntu-base`） | 计划中 |
 | v2.3 | GUI Time Machine —— session/timeline/diff 调试器 | 计划中 |

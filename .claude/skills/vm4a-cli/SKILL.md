@@ -73,6 +73,7 @@ Before running anything:
 | Pull bundle from OCI registry | `vm4a pull ghcr.io/you/name:tag --storage /tmp/vm4a` |
 | Check guest agent heartbeat | `vm4a agent status /path/to/bundle` |
 | Ping guest agent | `vm4a agent ping /path/to/bundle` |
+| Run as MCP server (stdio JSON-RPC) | `vm4a mcp` |
 
 ## Key workflows
 
@@ -204,7 +205,13 @@ Redirect to the GUI app for:
 
 ## What's new vs older guides
 
-Most recent (v2.0 P0 — agent-first primitives):
+Most recent:
+
+**v2.0 P1 — MCP server:**
+- `mcp` (stdio JSON-RPC 2.0 server; register in `.mcp.json` to expose
+  every primitive as an MCP tool to Claude Code / Cursor / Cline)
+
+**v2.0 P0 — agent-first primitives:**
 - `spawn` (one-shot create+start with optional `--from <oci-ref>`, `--wait-ssh`)
 - `exec` (SSH-driven command runner with structured JSON return)
 - `cp` (SCP host ↔ guest with `:` prefix convention)

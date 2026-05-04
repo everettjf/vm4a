@@ -27,19 +27,20 @@ VM4A is the codename **"VM for Agent"** — pronounced *"VM-for-A"*. The CLI is 
 
 ---
 
-## Status — v2.0 P0 (Agent primitives shipped)
+## Status — v2.0 P1 (Agent primitives + MCP shipped)
 
-The agent-first CLI primitives are **in**. One binary now takes you from "I want a clean machine" to "I have JSON output back from a command in the guest" without writing any glue.
+The agent-first CLI primitives are **in**, and `vm4a` now also speaks MCP — register one binary with Claude Code / Cursor / Cline and they get `spawn`/`exec`/`cp`/`fork`/`reset`/`list`/`ip`/`stop` as native tools.
 
-| Shipping in v2.0 P0 | What it does |
+| Shipped in v2.0 | What it does |
 |---|---|
 | `vm4a spawn` | One-shot create+start from an OCI image (`--from`) or local ISO (`--image`), with `--wait-ip` / `--wait-ssh` |
 | `vm4a exec` | SSH into the guest, run a command, return `{exit_code, stdout, stderr, duration_ms, timed_out}` |
 | `vm4a cp` | Bidirectional file transfer over SCP — `:` prefix marks the guest path |
 | `vm4a fork` | APFS clonefile a bundle and optionally auto-start it (with snapshot restore) |
 | `vm4a reset` | Stop + restore from a `.vzstate` snapshot — for try → fail → reset → retry loops |
+| `vm4a mcp` | Stdio JSON-RPC 2.0 MCP server — drop-in tool for any MCP-aware client |
 
-Still designing for later milestones: `vm4a mcp` (MCP server for Claude Code / Cursor), `vm4a serve` (HTTP API for SDKs), GUI Time Machine. See the [roadmap](#roadmap).
+Still designing for later milestones: `vm4a serve` (HTTP API for SDKs), GUI Time Machine. See the [roadmap](#roadmap).
 
 ---
 
@@ -127,6 +128,9 @@ vm4a ip                Resolve a NAT VM's IP from Apple's DHCP leases
 vm4a ssh               SSH into a NAT VM
 vm4a agent status      Read the last heartbeat from the in-guest agent (scaffold)
 vm4a agent ping        Send a ping command to the in-guest agent (scaffold)
+
+Agent integrations (v2.0 P1)
+vm4a mcp               Run as an MCP server over stdio (Claude Code / Cursor / Cline)
 ```
 
 Run `vm4a <subcommand> --help` for the full option list.
@@ -233,6 +237,42 @@ Uses `clonefile(2)` on APFS volumes (same volume → instantaneous, zero extra d
 ```bash
 vm4a clone /tmp/vm4a/golden /tmp/vm4a/job-$CI_JOB_ID
 ```
+
+---
+
+## Use with Claude Code / Cursor / Cline (MCP)
+
+Register `vm4a` as an MCP server and the assistant gets every agent primitive as a callable tool — no glue code, no spawning shell commands.
+
+**Claude Code** — add to `.mcp.json` at the project or user level:
+
+```json
+{
+  "mcpServers": {
+    "vm4a": {
+      "command": "vm4a",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+**Cursor** — add the same block to `~/.cursor/mcp.json`. **Cline** — add it to the Cline settings panel under "MCP Servers".
+
+Once registered, the assistant sees the following tools:
+
+| Tool | Returns |
+|---|---|
+| `spawn` | `{id, name, path, os, pid, ip, ssh_ready}` |
+| `exec` | `{exit_code, stdout, stderr, duration_ms, timed_out}` |
+| `cp` | Same shape as `exec` (uses scp under the hood) |
+| `fork` | `{path, name, started, pid, ip}` |
+| `reset` | `{path, restored, pid, ip}` |
+| `list` | Array of `{id, name, path, os, status, pid, ip}` |
+| `ip` | Array of `{ip, mac, name?}` |
+| `stop` | `{stopped, pid, forced, reason?}` |
+
+The protocol is JSON-RPC 2.0 framed by newlines (the standard MCP stdio transport, protocol version `2024-11-05`). Run `printf '{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n' | vm4a mcp` to inspect the tool catalog manually.
 
 ---
 
@@ -385,7 +425,7 @@ Branch on these without parsing stderr.
 | --- | --- | --- |
 | v1.1 | Solid VM lifecycle + OCI distribution + snapshots (the EasyVM foundation) | ✅ shipped |
 | v2.0 P0 | Agent CLI primitives (`spawn`, `exec`, `cp`, `fork`, `reset`) over the v1 commands | ✅ shipped |
-| v2.0 P1 | MCP server — drop-in tool for Claude Code / Cursor / Cline | 🛠 designing |
+| v2.0 P1 | MCP server — drop-in tool for Claude Code / Cursor / Cline | ✅ shipped |
 | v2.1 | HTTP API + Python SDK | planned |
 | v2.2 | Curated OCI templates (`vm4a/python-dev`, `vm4a/xcode-dev`, `vm4a/ubuntu-base`) | planned |
 | v2.3 | GUI Time Machine — session/timeline/diff viewer for agent runs | planned |

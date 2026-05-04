@@ -29,6 +29,8 @@ struct VM4ACLI: AsyncParsableCommand {
             CpCommand.self,
             ForkCommand.self,
             ResetCommand.self,
+            // Agent integrations (P1)
+            MCPCommand.self,
             // Classic lifecycle
             CreateCommand.self,
             ListCommand.self,
