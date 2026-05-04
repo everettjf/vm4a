@@ -37,6 +37,11 @@ let package = Package(
             name: "VM4ACoreTests",
             dependencies: ["VM4ACore"],
             path: "Tests/VM4ACoreTests"
+        ),
+        .testTarget(
+            name: "VM4AIntegrationTests",
+            dependencies: ["VM4ACore"],
+            path: "Tests/VM4AIntegrationTests"
         )
     ]
 )
