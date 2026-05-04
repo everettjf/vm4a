@@ -12,9 +12,9 @@ Usage:
 Options:
   --version <x.y.z>        Release version (required). Accepts x.y.z or vx.y.z.
   --tap-repo <owner/repo>  Homebrew tap repository. Default: everettjf/homebrew-tap
-  --tap-dir <path>         Local temp dir for cloned tap repo. Default: /tmp/homebrew-easyvm-tap
+  --tap-dir <path>         Local temp dir for cloned tap repo. Default: /tmp/homebrew-vm4a-tap
   --repo <owner/name>      GitHub source repo. Auto-detected from gh if omitted.
-  --app-dmg <path>         Path to EasyVM.dmg for cask release (required when publishing app cask).
+  --app-dmg <path>         Path to VM4A.dmg for cask release (required when publishing app cask).
   --only-cli               Publish only CLI formula.
   --only-app               Publish only app cask.
   --skip-tag               Do not create/push git tag when missing.
@@ -31,7 +31,7 @@ Examples:
   scripts/release_homebrew_tap.sh \
     --version 0.2.0 \
     --tap-repo everettjf/homebrew-tap \
-    --app-dmg /path/to/EasyVM.dmg
+    --app-dmg /path/to/VM4A.dmg
 
   # Publish only CLI formula
   scripts/release_homebrew_tap.sh --version 0.2.0 --only-cli
@@ -58,7 +58,7 @@ PY
 
 VERSION=""
 TAP_REPO="${TAP_REPO:-everettjf/homebrew-tap}"
-TAP_DIR="${TAP_DIR:-/tmp/homebrew-easyvm-tap}"
+TAP_DIR="${TAP_DIR:-/tmp/homebrew-vm4a-tap}"
 GH_REPO="${GH_REPO:-}"
 APP_DMG_PATH="${APP_DMG_PATH:-}"
 PUBLISH_CLI=1
@@ -181,7 +181,7 @@ cleanup() {
 trap cleanup EXIT
 
 RELEASE_ASSETS=()
-CLI_ASSET_NAME="easyvm-cli-${TAG}.tar.gz"
+CLI_ASSET_NAME="vm4a-cli-${TAG}.tar.gz"
 CLI_SHA=""
 APP_SHA=""
 
@@ -193,7 +193,7 @@ if [[ "$PUBLISH_CLI" -eq 1 ]]; then
 fi
 
 if [[ "$PUBLISH_APP" -eq 1 ]]; then
-  APP_RELEASE_PATH="$TMP_DIR/EasyVM.dmg"
+  APP_RELEASE_PATH="$TMP_DIR/VM4A.dmg"
   cp -f "$APP_DMG_PATH" "$APP_RELEASE_PATH"
   APP_SHA=$(shasum -a 256 "$APP_RELEASE_PATH" | awk '{print $1}')
   RELEASE_ASSETS+=("$APP_RELEASE_PATH")
@@ -204,19 +204,19 @@ if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
   gh release upload "$TAG" --repo "$GH_REPO" "${RELEASE_ASSETS[@]}" --clobber
 else
   echo "Creating release $TAG ..."
-  gh release create "$TAG" --repo "$GH_REPO" "${RELEASE_ASSETS[@]}" -t "$TAG" -n "EasyVM $TAG"
+  gh release create "$TAG" --repo "$GH_REPO" "${RELEASE_ASSETS[@]}" -t "$TAG" -n "VM4A $TAG"
 fi
 
 FORMULA_URL="https://github.com/$GH_REPO/releases/download/$TAG/$CLI_ASSET_NAME"
-CASK_URL="https://github.com/$GH_REPO/releases/download/$TAG/EasyVM.dmg"
+CASK_URL="https://github.com/$GH_REPO/releases/download/$TAG/VM4A.dmg"
 
 remove_dir_if_exists "$TAP_DIR"
 mkdir -p "$(dirname "$TAP_DIR")"
 echo "Cloning tap repo $TAP_REPO ..."
 git clone "https://github.com/$TAP_REPO.git" "$TAP_DIR"
 
-FORMULA_PATH="$TAP_DIR/Formula/easyvm.rb"
-CASK_PATH="$TAP_DIR/Casks/easyvm.rb"
+FORMULA_PATH="$TAP_DIR/Formula/vm4a.rb"
+CASK_PATH="$TAP_DIR/Casks/vm4a.rb"
 mkdir -p "$TAP_DIR/Formula" "$TAP_DIR/Casks"
 
 if [[ "$PUBLISH_CLI" -eq 1 ]]; then
@@ -232,24 +232,24 @@ class Easyvm < Formula
 
   def install
     system "swift", "build", "-c", "release", "--disable-sandbox"
-    bin.install ".build/release/easyvm"
+    bin.install ".build/release/vm4a"
   end
 
   test do
-    assert_match "EasyVM standalone CLI", shell_output("#{bin}/easyvm --help")
+    assert_match "VM4A standalone CLI", shell_output("#{bin}/vm4a --help")
   end
 
   def caveats
     <<~EOS
-      easyvm uses Apple's Virtualization framework.
+      vm4a uses Apple's Virtualization framework.
       Before running VMs, sign the binary with virtualization entitlement:
 
         codesign --force --sign - \\
-          --entitlements EasyVM.entitlements \\
-          #{HOMEBREW_PREFIX}/bin/easyvm
+          --entitlements VM4A.entitlements \\
+          #{HOMEBREW_PREFIX}/bin/vm4a
 
-      You can copy entitlement file from EasyVM source repo:
-        EasyVM/EasyVM/EasyVM.entitlements
+      You can copy entitlement file from VM4A source repo:
+        VM4A/VM4A/VM4A.entitlements
     EOS
   end
 end
@@ -258,18 +258,18 @@ fi
 
 if [[ "$PUBLISH_APP" -eq 1 ]]; then
   cat > "$CASK_PATH" <<CASK
-cask "easyvm" do
+cask "vm4a" do
   version "$VERSION"
   sha256 "$APP_SHA"
 
   url "$CASK_URL"
-  name "EasyVM"
+  name "VM4A"
   desc "Lightweight virtual machine app for macOS"
   homepage "https://github.com/$GH_REPO"
 
   depends_on macos: ">= :ventura"
 
-  app "EasyVM.app"
+  app "VM4A.app"
 end
 CASK
 fi
@@ -279,11 +279,11 @@ git add -A
 if git diff --cached --quiet; then
   echo "No tap changes detected."
 else
-  COMMIT_MSG="release easyvm $TAG"
+  COMMIT_MSG="release vm4a $TAG"
   if [[ "$PUBLISH_CLI" -eq 1 && "$PUBLISH_APP" -eq 0 ]]; then
-    COMMIT_MSG="release easyvm CLI $TAG"
+    COMMIT_MSG="release vm4a CLI $TAG"
   elif [[ "$PUBLISH_CLI" -eq 0 && "$PUBLISH_APP" -eq 1 ]]; then
-    COMMIT_MSG="release easyvm app $TAG"
+    COMMIT_MSG="release vm4a app $TAG"
   fi
   git commit -m "$COMMIT_MSG"
   git push

@@ -1,10 +1,10 @@
-# Agent Guide for EasyVM
+# Agent Guide for VM4A
 
-This document serves as a guide for AI agents and contributors working on the **EasyVM** codebase. It outlines the project structure, development workflows, and coding conventions.
+This document serves as a guide for AI agents and contributors working on the **VM4A** codebase. It outlines the project structure, development workflows, and coding conventions.
 
 ## 1. Project Overview
 
-EasyVM is a macOS application for managing virtual machines.
+VM4A is a macOS application for managing virtual machines.
 - **Core Technology:** Apple's `Virtualization.framework`.
 - **UI Framework:** SwiftUI.
 - **Language:** Swift.
@@ -14,9 +14,9 @@ EasyVM is a macOS application for managing virtual machines.
 
 The repository is structured as follows:
 
-- **`EasyVM/`**: Root project folder.
-    - **`EasyVM.xcodeproj`**: Main Xcode project file.
-    - **`EasyVM/`**: Source code directory.
+- **`VM4A/`**: Root project folder.
+    - **`VM4A.xcodeproj`**: Main Xcode project file.
+    - **`VM4A/`**: Source code directory.
         - **`Application/`**: UI layer, organized by functional areas.
             - **`Entry/`**: App entry points (`ContentView`, `Sidebar`).
             - **`Main/`**: App lifecycle (`MainApp`, `AppDelegate`).
@@ -39,12 +39,12 @@ Since this is an Xcode project, command-line execution is possible but typically
 **Build and Run (CLI):**
 ```bash
 # Build the project
-xcodebuild -project EasyVM/EasyVM.xcodeproj -scheme EasyVM -destination 'platform=macOS,arch=arm64' build
+xcodebuild -project VM4A/VM4A.xcodeproj -scheme VM4A -destination 'platform=macOS,arch=arm64' build
 ```
 
 **Open in IDE:**
 ```bash
-open EasyVM/EasyVM.xcodeproj
+open VM4A/VM4A.xcodeproj
 ```
 
 ## 4. Testing
@@ -71,7 +71,7 @@ open EasyVM/EasyVM.xcodeproj
 - Use `print()` or standard Xcode breakpoints for debugging.
 - Check the "Console" output in Xcode for runtime errors from `Virtualization.framework`.
 - **Common Issues:**
-    - Entitlements: Ensure `com.apple.security.virtualization` is enabled (checked in `EasyVM.entitlements`).
+    - Entitlements: Ensure `com.apple.security.virtualization` is enabled (checked in `VM4A.entitlements`).
     - Hardware: This app **only** works on Apple Silicon Macs.
 
 ## 7. Rules for Contributions

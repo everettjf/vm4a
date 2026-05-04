@@ -167,8 +167,8 @@ if [[ "$PUBLISH_APP" -eq 1 ]]; then
   echo "Building macOS app (Release)..."
   TMP_BUILD_DIR=$(mktemp -d)
   xcodebuild \
-    -project EasyVM/EasyVM.xcodeproj \
-    -scheme EasyVM \
+    -project VM4A/VM4A.xcodeproj \
+    -scheme VM4A \
     -configuration Release \
     -sdk macosx \
     -derivedDataPath "$TMP_BUILD_DIR/DerivedData" \
@@ -176,15 +176,15 @@ if [[ "$PUBLISH_APP" -eq 1 ]]; then
     CODE_SIGNING_REQUIRED=NO \
     build
 
-  APP_PATH="$TMP_BUILD_DIR/DerivedData/Build/Products/Release/EasyVM.app"
+  APP_PATH="$TMP_BUILD_DIR/DerivedData/Build/Products/Release/VM4A.app"
   if [[ ! -d "$APP_PATH" ]]; then
     echo "Build output not found: $APP_PATH" >&2
     exit 1
   fi
 
-  APP_DMG_PATH="$TMP_BUILD_DIR/EasyVM.dmg"
+  APP_DMG_PATH="$TMP_BUILD_DIR/VM4A.dmg"
   echo "Packaging DMG: $APP_DMG_PATH"
-  hdiutil create -volname "EasyVM" -srcfolder "$APP_PATH" -ov -format UDZO "$APP_DMG_PATH" >/dev/null
+  hdiutil create -volname "VM4A" -srcfolder "$APP_PATH" -ov -format UDZO "$APP_DMG_PATH" >/dev/null
 fi
 
 echo "Committing version bump..."

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# prepare_mas.sh — Pre-flight checklist for submitting EasyVM to the Mac App Store.
+# prepare_mas.sh — Pre-flight checklist for submitting VM4A to the Mac App Store.
 #
 # Run from repo root:
 #     ./scripts/prepare_mas.sh
@@ -12,9 +12,9 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-APP_ENT="$ROOT/EasyVM/EasyVM/EasyVM.entitlements"
-CLI_ENT="$ROOT/Sources/EasyVMCLI/EasyVMCLI.entitlements"
-INFO_PLIST="$ROOT/EasyVM/EasyVM/Info.plist"
+APP_ENT="$ROOT/VM4A/VM4A/VM4A.entitlements"
+CLI_ENT="$ROOT/Sources/VM4ACLI/VM4ACLI.entitlements"
+INFO_PLIST="$ROOT/VM4A/VM4A/Info.plist"
 
 status=0
 warn() { printf "\033[33m! %s\033[0m\n" "$1"; status=1; }
@@ -80,7 +80,7 @@ cat <<'EOF'
   2. Screenshots: 1280x800 or 2560x1600 (at least 1 for macOS)
   3. Provisioning profile: Mac App Distribution + Mac Installer Distribution
   4. Xcode: Product > Archive > Distribute App > App Store Connect
-     OR: xcrun altool --upload-app -f EasyVM.pkg -u <apple-id> ...
+     OR: xcrun altool --upload-app -f VM4A.pkg -u <apple-id> ...
   5. Export compliance: declare HTTPS-only (no proprietary crypto)
   6. TestFlight for macOS (optional) before wider release.
 EOF

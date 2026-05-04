@@ -3,40 +3,40 @@
 import PackageDescription
 
 let package = Package(
-    name: "EasyVMCLI",
+    name: "VM4ACLI",
     platforms: [
         .macOS(.v13)
     ],
     products: [
-        .library(name: "EasyVMCore", targets: ["EasyVMCore"]),
-        .executable(name: "easyvm", targets: ["easyvm"]),
-        .executable(name: "easyvm-guest", targets: ["easyvm-guest"])
+        .library(name: "VM4ACore", targets: ["VM4ACore"]),
+        .executable(name: "vm4a", targets: ["vm4a"]),
+        .executable(name: "vm4a-guest", targets: ["vm4a-guest"])
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.5.0")
     ],
     targets: [
         .target(
-            name: "EasyVMCore",
-            path: "Sources/EasyVMCore"
+            name: "VM4ACore",
+            path: "Sources/VM4ACore"
         ),
         .executableTarget(
-            name: "easyvm",
+            name: "vm4a",
             dependencies: [
-                "EasyVMCore",
+                "VM4ACore",
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ],
-            path: "Sources/EasyVMCLI"
+            path: "Sources/VM4ACLI"
         ),
         .executableTarget(
-            name: "easyvm-guest",
-            dependencies: ["EasyVMCore"],
-            path: "Sources/EasyVMGuest"
+            name: "vm4a-guest",
+            dependencies: ["VM4ACore"],
+            path: "Sources/VM4AGuest"
         ),
         .testTarget(
-            name: "EasyVMCoreTests",
-            dependencies: ["EasyVMCore"],
-            path: "Tests/EasyVMCoreTests"
+            name: "VM4ACoreTests",
+            dependencies: ["VM4ACore"],
+            path: "Tests/VM4ACoreTests"
         )
     ]
 )
