@@ -1,6 +1,6 @@
 # VM4A — Virtual Machines for Agents
 
-**Spin up isolated macOS or Linux VMs on Apple Silicon for AI agents to safely run code in.** Built on Apple's [Virtualization framework](https://developer.apple.com/documentation/virtualization), packaged for the way coding agents actually work in 2026.
+**Spin up isolated Linux VMs on Apple Silicon for AI agents to safely run code in.** Built on Apple's [Virtualization framework](https://developer.apple.com/documentation/virtualization), packaged for the way coding agents actually work in 2026.
 
 > 中文文档：[README.zh-CN.md](README.zh-CN.md)
 
@@ -15,11 +15,13 @@
 
 Coding agents — Claude Code, Cursor, OpenAI Codex, your own loop — keep needing one thing: **a fresh, isolated machine to try things in**. VM4A is local-first, runs on your Mac, and is the only tool in this lane that gives you:
 
-- 🖥 **macOS and Linux guests** — test iOS/macOS app builds, not just `pip install`
+- 🐧 **Linux ARM64 guests, fully headless** — agent-friendly: no Setup Assistant, no human in the loop
 - 📸 **VZ snapshots (macOS 14+)** — `--save-on-stop` / `--restore` for sub-second try → fail → reset loops
 - 📦 **OCI registry push/pull** — distribute pre-baked agent environments through GHCR / Docker Hub / Harbor
 - 🚀 **Apple Silicon native** — `Virtualization.framework`, near-native performance, no QEMU emulation
 - 🪟 **GUI as a debugger, not the main UI** — when an agent run fails, open the snapshot in the app
+
+> **Why Linux only?** `vm4a` is the agent-facing CLI. macOS guests are valid VMs in `Virtualization.framework`, but Apple's Setup Assistant + the manual Remote-Login enable step can't be driven headlessly, so a macOS guest can't be agent-bootstrapped. The bundled SwiftUI app handles the (manual) macOS-guest install flow if you need it for non-agent use. **Host requirement: Apple Silicon Mac running macOS 13+.**
 
 VM4A is **"VM for Agent"** — pronounced *"VM-for-A"*. The CLI is `vm4a`.
 
@@ -89,7 +91,7 @@ cp ./.build/release/vm4a /usr/local/bin/
 | v2.0 P0 | Agent CLI primitives (`spawn`/`exec`/`cp`/`fork`/`reset`) | ✅ shipped |
 | v2.0 P1 | MCP server (`vm4a mcp`) — Claude Code / Cursor / Cline | ✅ shipped |
 | v2.1 | HTTP API (`vm4a serve`) + Python SDK | ✅ shipped |
-| v2.2 | Curated OCI templates (`ubuntu-base`, `python-dev`, `xcode-dev`) | ✅ shipped (recipes + CI) |
+| v2.2 | Curated OCI templates (`ubuntu-base`, `python-dev`) | ✅ shipped (recipes + CI) |
 | v2.3 | Time Machine viewer (`vm4a-sessions` SwiftUI app + `vm4a session` CLI) | ✅ shipped (standalone; main-app integration pending) |
 | v2.4 | Warm-pool runtime (`vm4a pool serve/acquire/release`), `--network none\|nat\|bridged\|host` | ✅ shipped (resource caps beyond CPU/memory/disk-size + ISO read-only intentionally limited by what VZ exposes) |
 

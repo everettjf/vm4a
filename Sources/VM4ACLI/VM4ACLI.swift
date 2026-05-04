@@ -3,7 +3,6 @@ import VM4ACore
 import Foundation
 import Virtualization
 
-extension VMOSType: ExpressibleByArgument {}
 extension NetworkMode: ExpressibleByArgument {
     public init?(argument: String) {
         guard let v = NetworkMode.parse(argument) else { return nil }
@@ -60,18 +59,15 @@ struct VM4ACLI: AsyncParsableCommand {
 }
 
 struct CreateCommand: ParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "create", abstract: "Create a VM bundle")
+    static let configuration = CommandConfiguration(commandName: "create", abstract: "Create a Linux VM bundle")
 
     @Argument(help: "VM name")
     var name: String
 
-    @Option(name: .long, help: "OS type: macOS or linux")
-    var os: VMOSType
-
     @Option(name: .long, help: "Parent directory to store VM bundles")
     var storage: String = FileManager.default.currentDirectoryPath
 
-    @Option(name: .long, help: "Initial image path (ISO/IPSW). Optional.")
+    @Option(name: .long, help: "Initial image path (ISO). Optional.")
     var image: String?
 
     @Option(name: .long, help: "vCPU count")
@@ -89,7 +85,7 @@ struct CreateCommand: ParsableCommand {
     @Option(name: .long, help: "Bridged interface bsdName (used with --network bridged). Use 'vm4a network list' to enumerate.")
     var bridgedInterface: String?
 
-    @Flag(name: .long, help: "Enable Rosetta translation share (Linux only, macOS 13+).")
+    @Flag(name: .long, help: "Enable Rosetta translation share (macOS 13+ host).")
     var rosetta: Bool = false
 
     @Option(name: .long, help: "Output format: text or json")
@@ -101,7 +97,7 @@ struct CreateCommand: ParsableCommand {
         let diskBytes = try diskGB.map { try bytesFromGB($0, fieldName: "disk-gb") }
         let outcome = try createBundle(options: CreateBundleOptions(
             name: name,
-            os: os,
+            os: .linux,
             storage: storageURL,
             imagePath: image,
             cpu: cpu,
@@ -119,9 +115,6 @@ struct CreateCommand: ParsableCommand {
         case .json:
             try writeJSONLine(outcome)
         case .text:
-            if os == .macOS {
-                print("Created macOS VM skeleton. Complete installation using GUI flow to generate HardwareModel/AuxiliaryStorage.")
-            }
             print("Created VM: \(outcome.path)")
         }
     }

@@ -372,15 +372,14 @@ public actor MCPServer {
         return [
             MCPTool(
                 name: "spawn",
-                description: "Create + start a VM in one shot. If <storage>/<name> exists, just (re)starts it; else uses --from <oci-ref> or --image <iso>. Returns {id, name, path, os, pid, ip, ssh_ready}.",
+                description: "Create + start a Linux VM in one shot. If <storage>/<name> exists, just (re)starts it; else uses --from <oci-ref> or --image <iso>. Returns {id, name, path, os, pid, ip, ssh_ready}.",
                 inputSchema: schemaObject(
                     required: ["name"],
                     properties: [
                         "name": schemaString("VM name (becomes <storage>/<name>)"),
-                        "os": schemaEnum(["linux", "macOS"], description: "Default linux"),
                         "storage": schemaString("Parent directory for bundles. Default cwd."),
                         "from": schemaString("OCI reference to pull if bundle missing"),
-                        "image": schemaString("Local ISO/IPSW path to install fresh"),
+                        "image": schemaString("Local Linux ISO path to install fresh"),
                         "cpu": schemaInteger("vCPU count"),
                         "memory_gb": schemaInteger("Memory in GB"),
                         "disk_gb": schemaInteger("Disk size in GB"),
@@ -736,16 +735,12 @@ public actor MCPServer {
         guard let name = obj["name"]?.stringValue else {
             throw MCPCallError("spawn: 'name' required")
         }
-        let osStr = obj["os"]?.stringValue ?? "linux"
-        guard let os = VMOSType(rawValue: osStr) else {
-            throw MCPCallError("spawn: invalid os '\(osStr)'")
-        }
         let memBytes = try obj["memory_gb"]?.intValue.map { try bytesFromGB($0, fieldName: "memory_gb") }
         let diskBytes = try obj["disk_gb"]?.intValue.map { try bytesFromGB($0, fieldName: "disk_gb") }
         let networkMode: NetworkMode = obj["network"]?.stringValue.flatMap(NetworkMode.parse) ?? .nat
         let options = SpawnOptions(
             name: name,
-            os: os,
+            os: .linux,
             storage: storageURL,
             from: obj["from"]?.stringValue,
             imagePath: obj["image"]?.stringValue,

@@ -50,7 +50,7 @@ vm4a/
 ├── Tests/VM4ACoreTests/           ← swift-testing 单元测试
 ├── VM4A/VM4A.xcodeproj            ← SwiftUI app（独立 xcodebuild 构建）
 ├── sdk/python/                    ← Python SDK 包（仅 stdlib）
-├── templates/                     ← OCI 模板构建脚本（ubuntu-base、python-dev、xcode-dev）
+├── templates/                     ← OCI 模板构建脚本（ubuntu-base、python-dev）
 ├── .github/workflows/             ← CI（目前只有月度模板 rebuild）
 ├── deploy.sh                      ← 发布：bump 版本、签名、推 brew tap
 └── scripts/                       ← 发布辅助（homebrew tap、MAS 准备）
@@ -264,7 +264,7 @@ OCI 模板按月通过 `.github/workflows/templates.yml` 在自托管 Apple Sili
 - **主 GUI app 的 Time Machine 视图。** 独立的 `vm4a-sessions` SwiftUI app 已经通过 SwiftPM 发布（`Sources/VM4ASessions/`），可以列出 sessions、按时间线展示事件、展开 args/outcome 面板。把这两个 view 集成进 `VM4A.app` 本身只需要在 Xcode 里把两个 `.swift` 文件拖进 Detail group、注册一个 sidebar 入口；推迟是因为 Xcode 项目有两个 target，pbxproj 编辑还是在 IDE 里做更稳。
 - **网络沙盒。** `--network none|host|egress-only` flag 还没有。当前只有 NAT 和 bridged；要"完全无网"或"只能出站"得在 runner 里加 packet filter 规则
 - **超出 CPU/内存/磁盘大小的资源 cap。** VZ 在创建时支持 `cpuCount`、`memorySize`、磁盘镜像大小（已经通过 `--cpu`、`--memory-gb`、`--disk-gb` 暴露），以及每个 attachment 的 read-only（已通过 `VMModelFieldStorageDevice.readOnly` 暴露，ISO/USB 默认 `true`）。VZ **不**支持、因此 macOS 在用户态无法实现的：每 VM 的 CPU share/配额、内存软限制、磁盘 IO 带宽、网络带宽、每 VM 文件系统配额。这些不应该加 CLI flag，因为加了也是骗用户。
-- **`xcode-dev` 模板的 `build.sh`。** 缺失，因为 macOS guest 现在没法 headless 安装；得先 GUI 安装 base，再用 `provision.sh` 走 SSH
+- **CLI 层面的 macOS guest 支持被有意拿掉了。** Apple 的 Setup Assistant 和首次启动后手动开 Remote Login 这两步没法 headless 驱动，所以 CLI spawn 出来的 macOS guest 没法在 Agent 视角下达到可用状态。`VMOSType.macOS` 和 `VM4ACore/Core.swift` 里的 VZ 平台代码保留，因为 SwiftUI app 的 "New macOS VM" 安装流程还要用；只是不再通过 `vm4a create` / `vm4a spawn` 暴露。
 - **MCP `resources` 和 `prompts`。** 只实现了 `tools`。给 VM 状态做一个 `vm4a://vms` 只读 resource 是自然的下一步
 - **Python 之外的 SDK。** Go 和 Node 是自然的下一个 —— 都是同一套 HTTP API 之上的 urllib 等价物
 - **PR 上的 `swift test` CI。** 有 deploy 流水线，没有 PR 验证流水线。加起来不难，但需要自托管 runner（又是 Virtualization.framework）

@@ -2,14 +2,15 @@
 name: vm4a-cli
 description: |
   Use this skill when the user wants to create, run, stop, clone, push/pull,
-  SSH into, or otherwise manage VM4A virtual machines via the `vm4a` CLI.
+  SSH into, or otherwise manage VM4A Linux virtual machines via the `vm4a` CLI.
   Triggers include any mention of VM4A + "VM", the commands `vm4a create`,
-  `vm4a run`, `vm4a pull`, `vm4a ssh`, "linux VM on mac", "macOS VM via
-  CLI", or requests to automate VM lifecycle (CI, scripting, batch clones).
+  `vm4a run`, `vm4a pull`, `vm4a ssh`, "linux VM on mac", or requests to
+  automate Linux VM lifecycle (CI, scripting, batch clones).
 
-  Do NOT use this skill for: the SwiftUI app (open Xcode instead), non-VM4A
-  VM tools (UTM/VirtualBuddy/tart have their own CLIs), or questions about the
-  Virtualization.framework itself.
+  Do NOT use this skill for: macOS guest install (the CLI is Linux-only;
+  redirect to the SwiftUI app), the SwiftUI app itself (open Xcode instead),
+  non-VM4A VM tools (UTM/VirtualBuddy/tart have their own CLIs), or questions
+  about the Virtualization.framework itself.
 ---
 
 # VM4A CLI
@@ -55,8 +56,7 @@ Before running anything:
 
 | Intent | Command |
 | --- | --- |
-| Create a Linux VM bundle | `vm4a create NAME --os linux [--image ISO.iso] [--bridged-interface en0] [--rosetta]` |
-| Create a macOS VM bundle skeleton (GUI completes install) | `vm4a create NAME --os macOS` |
+| Create a Linux VM bundle | `vm4a create NAME [--image ISO.iso] [--network bridged --bridged-interface en0] [--rosetta]` |
 | List bundles in a directory | `vm4a list --storage /tmp/vm4a [--output json]` |
 | Start a VM in the background | `vm4a run /path/to/bundle` |
 | Start in foreground (logs to stdout) | `vm4a run /path/to/bundle --foreground` |
@@ -110,7 +110,7 @@ vm4a reset /tmp/vm4a/task-$JOB_ID --from /tmp/vm4a/dev/clean.vzstate --wait-ip
 
 ```bash
 ISO=~/Downloads/ubuntu-24.04-live-server-arm64.iso
-vm4a create demo --os linux --storage /tmp/vm4a --image "$ISO" \
+vm4a create demo --storage /tmp/vm4a --image "$ISO" \
   --cpu 4 --memory-gb 8 --disk-gb 64
 vm4a run /tmp/vm4a/demo
 vm4a ip /tmp/vm4a/demo       # needs VM to have booted + DHCP'd
@@ -150,10 +150,11 @@ entries), not O(disk image size).
 - **`--rosetta` is Linux only** and requires
   `softwareupdate --install-rosetta --agree-to-license` before first run.
   The CLI warns but doesn't block.
-- **macOS guests created via CLI are skeletons.** `HardwareModel` and
-  `AuxiliaryStorage` are only created by the GUI's install flow. If the
-  user asks for a fully installed macOS VM from CLI, redirect them to
-  open `VM4A.app` → `File > New VM`.
+- **The CLI is Linux-only.** macOS guests would need interactive Setup
+  Assistant + a manual Remote Login toggle, neither of which can be
+  driven headlessly. If the user asks for a macOS VM, redirect them
+  to open `VM4A.app` → `File > New macOS VM` (the SwiftUI app handles
+  that flow). The CLI's `create` and `spawn` no longer accept `--os`.
 - **Config JSON format** starts at `schemaVersion: 1`. Old bundles without
   the field still load — tolerant decoding treats missing as 1. When
   adding new fields, make them optional in Core.swift decoding.
@@ -204,7 +205,7 @@ entries), not O(disk image size).
 ## When NOT to use the CLI
 
 Redirect to the GUI app for:
-- Completing a macOS guest install (needs IPSW download + interactive setup)
+- Anything to do with macOS *guests* (CLI is Linux-only; the GUI app handles macOS guest install end-to-end)
 - Changing graphics resolution / audio config (GUI has device editors)
 - First-time users who want a wizard
 

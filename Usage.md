@@ -88,8 +88,8 @@ The other shape — **long-lived persistent VM** — is just `vm4a spawn` once, 
 ### spawn — create+start in one call
 
 ```
-vm4a spawn <name> [--os linux|macOS] [--storage <dir>]
-                  (--from <oci-ref> | --image <iso-or-ipsw>)
+vm4a spawn <name> [--storage <dir>]
+                  (--from <oci-ref> | --image <iso>)
                   [--cpu <n>] [--memory-gb <n>] [--disk-gb <n>]
                   [--bridged-interface <bsdName>] [--rosetta]
                   [--restore <state.vzstate>] [--save-on-stop <state.vzstate>]
@@ -113,7 +113,7 @@ vm4a exec <vm-path> [--user <name>] [--key <path>] [--host <ip>]
                     [--session <id>] -- <command...>
 ```
 
-Default user is `root` (Linux) or current user (macOS). Without `--output json`, stdout/stderr stream and the exit code becomes this process's exit code. With `--output json`, returns `{exit_code, stdout, stderr, duration_ms, timed_out}`.
+Default user is `root`. Without `--output json`, stdout/stderr stream and the exit code becomes this process's exit code. With `--output json`, returns `{exit_code, stdout, stderr, duration_ms, timed_out}`.
 
 ```bash
 vm4a exec /tmp/vm4a/dev -- python3 -c 'print(1+1)'
@@ -165,7 +165,7 @@ For try → fail → reset → retry agent loops. Stops the VM (SIGTERM → SIGK
 
 | Command | What it does |
 |---|---|
-| `vm4a create <name> --os linux\|macOS [...]` | Create a VM bundle from an ISO/IPSW (no auto-start). |
+| `vm4a create <name> [...]` | Create a Linux VM bundle from an ISO (no auto-start). |
 | `vm4a list [--storage <dir>]` | List bundles in a directory with status, pid, IP. |
 | `vm4a run <vm-path> [--foreground]` | Start a VM in the background (default) or attached. |
 | `vm4a stop <vm-path> [--timeout <s>]` | Send SIGTERM, escalate to SIGKILL if needed. |
@@ -177,7 +177,7 @@ For try → fail → reset → retry agent loops. Stops the VM (SIGTERM → SIGK
 | `vm4a ip <vm>` | Resolve a NAT VM's IP from Apple's DHCP leases. |
 | `vm4a ssh <vm> [--user <name>] -- <ssh args>` | SSH in, with arguments after `--` passed through. |
 
-`run` defaults to a detached worker — the shell returns immediately and logs go to `<vm>/.vm4a-run.log`. Use `--foreground` to stream VZ output directly. macOS guests created via `create` are skeletons; finish the install in the GUI app.
+`run` defaults to a detached worker — the shell returns immediately and logs go to `<vm>/.vm4a-run.log`. Use `--foreground` to stream VZ output directly.
 
 ---
 
@@ -365,7 +365,6 @@ Pre-baked bundles live at `ghcr.io/everettjf/vm4a-templates/*`:
 |---|---|
 | `ubuntu-base` | `ghcr.io/everettjf/vm4a-templates/ubuntu-base:24.04` |
 | `python-dev` | `ghcr.io/everettjf/vm4a-templates/python-dev:latest` |
-| `xcode-dev` | `ghcr.io/everettjf/vm4a-templates/xcode-dev:latest` |
 
 Build scripts and the CI pipeline that rebuilds them monthly live in [`templates/`](templates/).
 
@@ -398,7 +397,7 @@ Bearer-token (GHCR-style) and HTTP Basic auth are both supported.
 
 ```bash
 vm4a network list                              # find bsdNames
-vm4a spawn web --os linux --image ubuntu-arm64.iso --network bridged --bridged-interface en0
+vm4a spawn web --image ubuntu-arm64.iso --network bridged --bridged-interface en0
 vm4a spawn airgap --image ubuntu-arm64.iso --network none
 ```
 
@@ -412,7 +411,7 @@ Bridged mode requires the CLI carry `com.apple.vm.networking`. The bundled entit
 
 ```bash
 softwareupdate --install-rosetta --agree-to-license
-vm4a create linux-dev --os linux --rosetta --image ubuntu-arm64.iso …
+vm4a create linux-dev --rosetta --image ubuntu-arm64.iso …
 ```
 
 Inside the guest, mount the virtiofs share named `rosetta` and register it with `binfmt_misc`. Apple's [official guide](https://developer.apple.com/documentation/virtualization/running_intel_binaries_in_linux_vms_with_rosetta) walks through the in-guest steps.
@@ -445,9 +444,7 @@ demo/
 ├── Disk.img              # raw disk
 ├── MachineIdentifier     # VZ platform identity
 ├── NVRAM                 # (Linux) EFI variable store
-├── HardwareModel         # (macOS) VZ hardware identity
-├── AuxiliaryStorage      # (macOS) OS boot bits
-├── console.log           # (Linux) serial console log, rotated each run
+├── console.log           # serial console log, rotated each run
 ├── .vm4a-run.pid         # worker pid while running
 ├── .vm4a-run.log         # detached worker stdout+stderr
 ├── .vm4a-sessions/       # one <session-id>.jsonl per recorded session
@@ -482,8 +479,7 @@ Branch on these without parsing stderr.
 | `ssh` / `ip` returns nothing | VM still booting / DHCP'ing — wait 10–30 s |
 | `push` returns HTTP 401 | Set `VM4A_REGISTRY_USER` / `VM4A_REGISTRY_PASSWORD` |
 | `--rosetta` fails with "not installed" | `softwareupdate --install-rosetta --agree-to-license` |
-| Linux guest hangs at boot | Confirm ISO is ARM64; verify `MachineIdentifier` and `NVRAM` exist |
-| CLI `macOS` VM fails to start | Expected — CLI creates skeletons, finish install in GUI |
-| Snapshot flags refused | Requires macOS 14+ |
+| Guest hangs at boot | Confirm ISO is ARM64; verify `MachineIdentifier` and `NVRAM` exist |
+| Snapshot flags refused | Requires macOS 14+ host |
 | `vm4a serve` returns 401 | Set the same `VM4A_AUTH_TOKEN` on the client |
 | Bridged VM has no IP via `vm4a ip` | Bridged mode doesn't use Apple's DHCP server; pass `--host <ip>` |
