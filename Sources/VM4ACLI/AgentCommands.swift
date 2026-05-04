@@ -50,7 +50,10 @@ struct SpawnCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Disk size in GB")
     var diskGB: Int?
 
-    @Option(name: .long, help: "Bridged interface bsdName")
+    @Option(name: .long, help: "Network mode: none, nat (default), bridged, host (alias for bridged)")
+    var network: NetworkMode = .nat
+
+    @Option(name: .long, help: "Bridged interface bsdName (used with --network bridged)")
     var bridgedInterface: String?
 
     @Flag(name: .long, help: "Enable Rosetta share (Linux only)")
@@ -107,6 +110,7 @@ struct SpawnCommand: AsyncParsableCommand {
             cpu: cpu,
             memoryBytes: memoryBytes,
             diskBytes: diskBytes,
+            networkMode: network,
             bridgedInterface: bridgedInterface,
             rosetta: rosetta,
             restoreStateAt: restore,

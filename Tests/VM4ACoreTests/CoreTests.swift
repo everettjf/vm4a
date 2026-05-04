@@ -253,6 +253,38 @@ struct CoreTests {
     }
 
     @Test
+    func networkModeParsesAliases() throws {
+        #expect(NetworkMode.parse("none") == NetworkMode.none)
+        #expect(NetworkMode.parse("nat") == .nat)
+        #expect(NetworkMode.parse("NAT") == .nat)
+        #expect(NetworkMode.parse("bridged") == .bridged)
+        #expect(NetworkMode.parse("host") == .bridged)        // alias
+        #expect(NetworkMode.parse("nope") == nil)
+    }
+
+    @Test
+    func bridgedInterfaceImpliesBridgedMode() throws {
+        // Back-compat: passing --bridged-interface without --network should still mean bridged.
+        let opts = CreateBundleOptions(
+            name: "x", os: .linux,
+            storage: URL(fileURLWithPath: "/tmp"),
+            bridgedInterface: "en0"
+        )
+        #expect(opts.networkMode == .bridged)
+        #expect(opts.bridgedInterface == "en0")
+    }
+
+    @Test
+    func explicitNetworkModeWins() throws {
+        let opts = CreateBundleOptions(
+            name: "x", os: .linux,
+            storage: URL(fileURLWithPath: "/tmp"),
+            networkMode: NetworkMode.none
+        )
+        #expect(opts.networkMode == NetworkMode.none)
+    }
+
+    @Test
     func parseCopyEndpointDistinguishesGuestAndHost() throws {
         #expect(parseCopyEndpoint("/tmp/local.txt") == .host("/tmp/local.txt"))
         #expect(parseCopyEndpoint("./relative") == .host("./relative"))

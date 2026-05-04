@@ -224,6 +224,7 @@ public func makeVM4ARouter(config: VM4AHTTPServerConfig) -> HTTPRouter {
                 }
                 let memBytes = try args["memory_gb"]?.intValue.map { try bytesFromGB($0, fieldName: "memory_gb") }
                 let diskBytes = try args["disk_gb"]?.intValue.map { try bytesFromGB($0, fieldName: "disk_gb") }
+                let networkMode: NetworkMode = args["network"]?.stringValue.flatMap(NetworkMode.parse) ?? .nat
                 let outcome = try await runSpawn(options: SpawnOptions(
                     name: name,
                     os: os,
@@ -233,6 +234,7 @@ public func makeVM4ARouter(config: VM4AHTTPServerConfig) -> HTTPRouter {
                     cpu: args["cpu"]?.intValue,
                     memoryBytes: memBytes,
                     diskBytes: diskBytes,
+                    networkMode: networkMode,
                     bridgedInterface: args["bridged_interface"]?.stringValue,
                     rosetta: args["rosetta"]?.boolValue ?? false,
                     restoreStateAt: args["restore"]?.stringValue,

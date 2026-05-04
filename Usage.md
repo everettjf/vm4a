@@ -337,16 +337,24 @@ Bearer-token (GHCR-style) and HTTP Basic auth are both supported.
 
 ## Networking
 
-**NAT (default)** — works with zero setup. VMs live on `192.168.64.0/24`. Look up the IP with `vm4a ip`.
+`--network <mode>` selects how the VM gets a NIC. Valid modes:
 
-**Bridged** — VM gets an IP from your LAN's DHCP:
+| Mode | What it does |
+|---|---|
+| `nat` (default) | NAT on `192.168.64.0/24`, look up IP with `vm4a ip` |
+| `bridged` | VM gets an IP from your LAN's DHCP. Pair with `--bridged-interface <bsdName>`; if omitted, the first available interface is used. |
+| `host` | Alias for `bridged` (VZ has no separate host-networking mode) |
+| `none` | No NIC at all. Use this for offline workloads or where the agent only needs filesystem I/O. |
 
 ```bash
 vm4a network list                              # find bsdNames
-vm4a create web --os linux --bridged-interface en0 …
+vm4a spawn web --os linux --image ubuntu-arm64.iso --network bridged --bridged-interface en0
+vm4a spawn airgap --image ubuntu-arm64.iso --network none
 ```
 
-Bridged mode requires the CLI carry `com.apple.vm.networking`. The bundled entitlement file has it — re-run the codesign step from [Install](README.md#install) if you change binaries. For bridged VMs, `vm4a ip` returns nothing (no Apple DHCP lease); pass `--host <ip>` to `ssh`/`exec`/`cp` directly.
+Bridged mode requires the CLI carry `com.apple.vm.networking`. The bundled entitlement file has it — re-run the codesign step from [Install](README.md#install) if you change binaries. For bridged VMs, `vm4a ip` returns nothing (no Apple DHCP lease); pass `--host <ip>` to `ssh`/`exec`/`cp` directly. For `none` mode, host ↔ guest communication has to go through `cp` over… nothing — there's no SSH; this mode is mostly useful for boot-only validation or workloads that talk through virtiofs only.
+
+> Back-compat: passing `--bridged-interface en0` without `--network` still implies bridged mode, matching the old CLI surface.
 
 ---
 

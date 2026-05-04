@@ -4,6 +4,12 @@ import Foundation
 import Virtualization
 
 extension VMOSType: ExpressibleByArgument {}
+extension NetworkMode: ExpressibleByArgument {
+    public init?(argument: String) {
+        guard let v = NetworkMode.parse(argument) else { return nil }
+        self = v
+    }
+}
 
 enum OutputFormat: String, ExpressibleByArgument {
     case text
@@ -77,7 +83,10 @@ struct CreateCommand: ParsableCommand {
     @Option(name: .long, help: "Disk size in GB")
     var diskGB: Int?
 
-    @Option(name: .long, help: "Bridged interface bsdName (enables bridged networking). Use 'vm4a network list' to enumerate.")
+    @Option(name: .long, help: "Network mode: none, nat (default), bridged, host (alias for bridged)")
+    var network: NetworkMode = .nat
+
+    @Option(name: .long, help: "Bridged interface bsdName (used with --network bridged). Use 'vm4a network list' to enumerate.")
     var bridgedInterface: String?
 
     @Flag(name: .long, help: "Enable Rosetta translation share (Linux only, macOS 13+).")
@@ -98,6 +107,7 @@ struct CreateCommand: ParsableCommand {
             cpu: cpu,
             memoryBytes: memoryBytes,
             diskBytes: diskBytes,
+            networkMode: network,
             bridgedInterface: bridgedInterface,
             rosetta: rosetta
         ))

@@ -337,16 +337,24 @@ vm4a pull ghcr.io/someone/ubuntu-arm:24.04 --storage /tmp/vm4a
 
 ## 网络
 
-**NAT（默认）** —— 零配置。VM 在 `192.168.64.0/24` 网段，用 `vm4a ip` 查具体地址。
+`--network <mode>` 控制 VM 怎么联网。可选值：
 
-**Bridged** —— VM 从 LAN 的 DHCP 拿 IP：
+| 模式 | 含义 |
+|---|---|
+| `nat`（默认） | NAT 网段 `192.168.64.0/24`，用 `vm4a ip` 查 IP |
+| `bridged` | VM 从 LAN DHCP 拿 IP。配合 `--bridged-interface <bsdName>` 指定接口；不指定则用第一个可用的 |
+| `host` | `bridged` 的别名（VZ 没有真正独立的 host networking 模式） |
+| `none` | 不挂网卡。给离线 workload 或只需要文件 I/O 的 Agent 用 |
 
 ```bash
 vm4a network list                              # 查 bsdName
-vm4a create web --os linux --bridged-interface en0 …
+vm4a spawn web --os linux --image ubuntu-arm64.iso --network bridged --bridged-interface en0
+vm4a spawn airgap --image ubuntu-arm64.iso --network none
 ```
 
-bridged 模式要求 CLI 带 `com.apple.vm.networking` entitlement。源码编译时按 [安装](README.md#安装) 里的 codesign 命令重签即可。bridged VM 的 `vm4a ip` 拿不到结果（不走 Apple 的 DHCP），手动给 `ssh`/`exec`/`cp` 传 `--host <ip>`。
+bridged 模式要求 CLI 带 `com.apple.vm.networking` entitlement。源码编译时按 [安装](README.md#安装) 里的 codesign 命令重签即可。bridged VM 的 `vm4a ip` 拿不到结果（不走 Apple 的 DHCP），手动给 `ssh`/`exec`/`cp` 传 `--host <ip>`。`none` 模式没有 SSH，只能通过 virtiofs 或其他非网络方式通信，主要用于启动校验或纯文件类 workload。
+
+> 向后兼容：单独传 `--bridged-interface en0` 不传 `--network` 仍隐含 bridged 模式，和旧 CLI 行为一致。
 
 ---
 

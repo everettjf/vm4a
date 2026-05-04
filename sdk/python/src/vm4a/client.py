@@ -187,6 +187,7 @@ class Client:
         cpu: int | None = None,
         memory_gb: int | None = None,
         disk_gb: int | None = None,
+        network: str | None = None,
         bridged_interface: str | None = None,
         rosetta: bool = False,
         restore: str | None = None,
@@ -202,6 +203,7 @@ class Client:
         body = _drop_none({
             "name": name, "os": os_, "storage": storage, "from": from_, "image": image,
             "cpu": cpu, "memory_gb": memory_gb, "disk_gb": disk_gb,
+            "network": network,
             "bridged_interface": bridged_interface, "rosetta": rosetta,
             "restore": restore, "save_on_stop": save_on_stop,
             "wait_ip": wait_ip, "wait_ssh": wait_ssh,

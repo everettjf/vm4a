@@ -28,6 +28,26 @@ public func bytesFromGB(_ gigabytes: Int, fieldName: String) throws -> UInt64 {
     return bytes
 }
 
+// MARK: - Network mode
+
+/// User-facing network mode. `bridged` may carry an interface identifier
+/// (otherwise the first available interface is used).
+public enum NetworkMode: String, Codable, Sendable {
+    case none      // no NIC attached
+    case nat       // default NAT (192.168.64.0/24)
+    case bridged   // VZ bridged — requires com.apple.vm.networking entitlement
+
+    /// Parse a user-supplied string into a NetworkMode. Case-insensitive.
+    /// Accepts "host" as an alias for "bridged" since VZ has no separate
+    /// host-networking mode.
+    public static func parse(_ raw: String) -> NetworkMode? {
+        let lower = raw.lowercased()
+        if let v = NetworkMode(rawValue: lower) { return v }
+        if lower == "host" { return .bridged }
+        return nil
+    }
+}
+
 // MARK: - Create
 
 public struct CreateBundleOptions: Sendable {
@@ -38,6 +58,7 @@ public struct CreateBundleOptions: Sendable {
     public var cpu: Int?
     public var memoryBytes: UInt64?
     public var diskBytes: UInt64?
+    public var networkMode: NetworkMode
     public var bridgedInterface: String?
     public var rosetta: Bool
 
@@ -49,6 +70,7 @@ public struct CreateBundleOptions: Sendable {
         cpu: Int? = nil,
         memoryBytes: UInt64? = nil,
         diskBytes: UInt64? = nil,
+        networkMode: NetworkMode = .nat,
         bridgedInterface: String? = nil,
         rosetta: Bool = false
     ) {
@@ -59,6 +81,12 @@ public struct CreateBundleOptions: Sendable {
         self.cpu = cpu
         self.memoryBytes = memoryBytes
         self.diskBytes = diskBytes
+        // bridgedInterface implies bridged mode (back-compat with --bridged-interface)
+        if bridgedInterface != nil, networkMode == .nat {
+            self.networkMode = .bridged
+        } else {
+            self.networkMode = networkMode
+        }
         self.bridgedInterface = bridgedInterface
         self.rosetta = rosetta
     }
@@ -101,15 +129,26 @@ public func createBundle(options: CreateBundleOptions) throws -> CreateBundleOut
     let normalizedImagePath = options.imagePath.map(normalizePath)
 
     let network: [VMModelFieldNetworkDevice]
-    if let bridged = options.bridgedInterface {
+    switch options.networkMode {
+    case .none:
+        network = []
+    case .nat:
+        network = config.networkDevices  // default NAT from VMConfigModel.defaults
+    case .bridged:
         let interfaces = availableBridgedInterfaces()
-        if interfaces.first(where: { $0.identifier == bridged }) == nil {
-            let available = interfaces.map { $0.identifier }.joined(separator: ", ")
-            throw VM4AError.notFound("Bridged interface '\(bridged)'. Available: \(available)")
+        if interfaces.isEmpty {
+            throw VM4AError.message("No bridged interfaces available. Ensure the CLI is signed with com.apple.vm.networking entitlement.")
         }
-        network = [.init(type: .Bridged, identifier: bridged)]
-    } else {
-        network = config.networkDevices
+        if let bridged = options.bridgedInterface {
+            if interfaces.first(where: { $0.identifier == bridged }) == nil {
+                let available = interfaces.map { $0.identifier }.joined(separator: ", ")
+                throw VM4AError.notFound("Bridged interface '\(bridged)'. Available: \(available)")
+            }
+            network = [.init(type: .Bridged, identifier: bridged)]
+        } else {
+            // auto-pick the first interface
+            network = [.init(type: .Bridged, identifier: interfaces[0].identifier)]
+        }
     }
 
     var rosettaWarning: String?
@@ -138,7 +177,7 @@ public func createBundle(options: CreateBundleOptions) throws -> CreateBundleOut
         storageDevices = config.storageDevices
     }
 
-    if options.bridgedInterface != nil || rosettaField != nil || storageDevices.count != config.storageDevices.count {
+    if options.networkMode != .nat || rosettaField != nil || storageDevices.count != config.storageDevices.count {
         config = VMConfigModel(
             type: config.type,
             name: config.name,
@@ -189,6 +228,7 @@ public struct SpawnOptions: Sendable {
     public var cpu: Int?
     public var memoryBytes: UInt64?
     public var diskBytes: UInt64?
+    public var networkMode: NetworkMode
     public var bridgedInterface: String?
     public var rosetta: Bool
     public var restoreStateAt: String?
@@ -209,6 +249,7 @@ public struct SpawnOptions: Sendable {
         cpu: Int? = nil,
         memoryBytes: UInt64? = nil,
         diskBytes: UInt64? = nil,
+        networkMode: NetworkMode = .nat,
         bridgedInterface: String? = nil,
         rosetta: Bool = false,
         restoreStateAt: String? = nil,
@@ -228,6 +269,11 @@ public struct SpawnOptions: Sendable {
         self.cpu = cpu
         self.memoryBytes = memoryBytes
         self.diskBytes = diskBytes
+        if bridgedInterface != nil, networkMode == .nat {
+            self.networkMode = .bridged
+        } else {
+            self.networkMode = networkMode
+        }
         self.bridgedInterface = bridgedInterface
         self.rosetta = rosetta
         self.restoreStateAt = restoreStateAt
@@ -282,6 +328,7 @@ public func runSpawn(
                 cpu: options.cpu,
                 memoryBytes: options.memoryBytes,
                 diskBytes: options.diskBytes,
+                networkMode: options.networkMode,
                 bridgedInterface: options.bridgedInterface,
                 rosetta: options.rosetta
             ))

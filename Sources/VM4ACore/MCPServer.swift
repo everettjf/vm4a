@@ -305,7 +305,8 @@ public actor MCPServer {
                         "cpu": schemaInteger("vCPU count"),
                         "memory_gb": schemaInteger("Memory in GB"),
                         "disk_gb": schemaInteger("Disk size in GB"),
-                        "bridged_interface": schemaString("Bridged interface bsdName"),
+                        "network": schemaEnum(["none", "nat", "bridged", "host"], description: "Network mode (default nat)"),
+                        "bridged_interface": schemaString("Bridged interface bsdName (used with network=bridged)"),
                         "rosetta": schemaBoolean("Enable Rosetta share (Linux only)"),
                         "restore": schemaString(".vzstate path to restore on start"),
                         "save_on_stop": schemaString(".vzstate path to save on clean stop"),
@@ -465,6 +466,7 @@ public actor MCPServer {
         }
         let memBytes = try obj["memory_gb"]?.intValue.map { try bytesFromGB($0, fieldName: "memory_gb") }
         let diskBytes = try obj["disk_gb"]?.intValue.map { try bytesFromGB($0, fieldName: "disk_gb") }
+        let networkMode: NetworkMode = obj["network"]?.stringValue.flatMap(NetworkMode.parse) ?? .nat
         let options = SpawnOptions(
             name: name,
             os: os,
@@ -474,6 +476,7 @@ public actor MCPServer {
             cpu: obj["cpu"]?.intValue,
             memoryBytes: memBytes,
             diskBytes: diskBytes,
+            networkMode: networkMode,
             bridgedInterface: obj["bridged_interface"]?.stringValue,
             rosetta: obj["rosetta"]?.boolValue ?? false,
             restoreStateAt: obj["restore"]?.stringValue,
