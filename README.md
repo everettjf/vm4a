@@ -322,6 +322,25 @@ Full SDK README and example agent loop in [`sdk/python/`](sdk/python/).
 
 ---
 
+## Official templates (v2.2)
+
+Pre-baked bundles published to GHCR — pull, run, agent ready in a second:
+
+| Template | Pull |
+|---|---|
+| `ubuntu-base` (Ubuntu 24.04 + ssh + python3) | `ghcr.io/everettjf/vm4a-templates/ubuntu-base:24.04` |
+| `python-dev` (ubuntu-base + uv + pipx + ripgrep + git) | `ghcr.io/everettjf/vm4a-templates/python-dev:latest` |
+| `xcode-dev` (macOS + Xcode CLT + Homebrew) | `ghcr.io/everettjf/vm4a-templates/xcode-dev:latest` |
+
+```bash
+vm4a spawn dev --from ghcr.io/everettjf/vm4a-templates/python-dev:latest \
+    --storage /tmp/vm4a --wait-ssh
+```
+
+Recipes and the CI pipeline that rebuilds them monthly live in [`templates/`](templates/). A `xcode-dev` variant exists; rebuilds are manual today because the macOS guest install needs the GUI flow before automation can take over.
+
+---
+
 ## Distribution via OCI registries
 
 Bundles pack into a single `tar.gz` layer with media type `application/vnd.vm4a.bundle.v1.tar+gzip`, plus a small JSON config blob. Any Docker Registry v2 compatible registry works (GHCR, Docker Hub, ECR, Harbor, in-house).
@@ -473,7 +492,7 @@ Branch on these without parsing stderr.
 | v2.0 P0 | Agent CLI primitives (`spawn`, `exec`, `cp`, `fork`, `reset`) over the v1 commands | ✅ shipped |
 | v2.0 P1 | MCP server — drop-in tool for Claude Code / Cursor / Cline | ✅ shipped |
 | v2.1 | HTTP API + Python SDK | ✅ shipped |
-| v2.2 | Curated OCI templates (`vm4a/python-dev`, `vm4a/xcode-dev`, `vm4a/ubuntu-base`) | planned |
+| v2.2 | Curated OCI templates (`ubuntu-base`, `python-dev`, `xcode-dev`) | ✅ shipped (recipes + CI) |
 | v2.3 | GUI Time Machine — session/timeline/diff viewer for agent runs | planned |
 | v2.4 | Pre-warmed VM pools, network sandbox policies, resource caps | planned |
 

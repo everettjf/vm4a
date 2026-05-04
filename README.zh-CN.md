@@ -322,6 +322,25 @@ print(out.exit_code, out.stdout)
 
 ---
 
+## 官方模板（v2.2）
+
+GHCR 上预制好的 bundle —— 拉下来、启动、Agent 就绪只要 1 秒：
+
+| 模板 | 拉取地址 |
+|---|---|
+| `ubuntu-base`（Ubuntu 24.04 + ssh + python3） | `ghcr.io/everettjf/vm4a-templates/ubuntu-base:24.04` |
+| `python-dev`（ubuntu-base + uv + pipx + ripgrep + git） | `ghcr.io/everettjf/vm4a-templates/python-dev:latest` |
+| `xcode-dev`（macOS + Xcode CLT + Homebrew） | `ghcr.io/everettjf/vm4a-templates/xcode-dev:latest` |
+
+```bash
+vm4a spawn dev --from ghcr.io/everettjf/vm4a-templates/python-dev:latest \
+    --storage /tmp/vm4a --wait-ssh
+```
+
+构建脚本和每月自动 rebuild 的 CI 流水线在 [`templates/`](templates/)。`xcode-dev` 现在还是手工构建 —— macOS guest 的初始安装要走 GUI 流程，自动化之前必须先有 base bundle。
+
+---
+
 ## 通过 OCI registry 分发
 
 bundle 打包成单个 `tar.gz` 层，media type 是 `application/vnd.vm4a.bundle.v1.tar+gzip`，配一个小的 JSON config blob。任何 Docker Registry v2 兼容的 registry 都能用（GHCR、Docker Hub、ECR、Harbor、私有部署）。
@@ -473,7 +492,7 @@ CLI 创建的 bundle 能在 GUI 里用，反之亦然。
 | v2.0 P0 | Agent CLI 原语（`spawn`/`exec`/`cp`/`fork`/`reset`） | ✅ 已发布 |
 | v2.0 P1 | MCP server，Claude Code / Cursor / Cline 直接接入 | ✅ 已发布 |
 | v2.1 | HTTP API + Python SDK | ✅ 已发布 |
-| v2.2 | 官方维护的 OCI 模板（`vm4a/python-dev`、`vm4a/xcode-dev`、`vm4a/ubuntu-base`） | 计划中 |
+| v2.2 | 官方维护的 OCI 模板（`ubuntu-base`、`python-dev`、`xcode-dev`） | ✅ 已发布（构建脚本 + CI） |
 | v2.3 | GUI Time Machine —— session/timeline/diff 调试器 | 计划中 |
 | v2.4 | 预热 VM 池、网络沙盒策略、资源上限 | 计划中 |
 

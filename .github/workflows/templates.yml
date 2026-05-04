@@ -1,0 +1,44 @@
+name: Build & push Linux templates
+
+# GitHub-hosted runners cannot run vm4a — Virtualization.framework is only
+# available on Apple Silicon hardware that GitHub doesn't offer. Builds run on
+# self-hosted runners with the labels [self-hosted, macOS, ARM64, vm4a].
+
+on:
+  workflow_dispatch:
+    inputs:
+      template:
+        description: "Which template to build"
+        type: choice
+        required: true
+        default: "all"
+        options: ["all", "ubuntu-base", "python-dev"]
+  schedule:
+    # Monthly rebuild for security updates (1st of the month, 09:00 UTC).
+    - cron: "0 9 1 * *"
+
+jobs:
+  ubuntu-base:
+    if: ${{ github.event_name == 'schedule' || inputs.template == 'all' || inputs.template == 'ubuntu-base' }}
+    runs-on: [self-hosted, macOS, ARM64, vm4a]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ubuntu-base
+        env:
+          VM4A_REGISTRY_USER: ${{ github.actor }}
+          VM4A_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: templates/ubuntu-base
+        run: ./build.sh
+
+  python-dev:
+    needs: ubuntu-base
+    if: ${{ github.event_name == 'schedule' || inputs.template == 'all' || inputs.template == 'python-dev' }}
+    runs-on: [self-hosted, macOS, ARM64, vm4a]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build python-dev
+        env:
+          VM4A_REGISTRY_USER: ${{ github.actor }}
+          VM4A_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: templates/python-dev
+        run: ./build.sh
