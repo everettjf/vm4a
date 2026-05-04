@@ -253,6 +253,49 @@ struct CoreTests {
     }
 
     @Test
+    func parseCopyEndpointDistinguishesGuestAndHost() throws {
+        #expect(parseCopyEndpoint("/tmp/local.txt") == .host("/tmp/local.txt"))
+        #expect(parseCopyEndpoint("./relative") == .host("./relative"))
+        #expect(parseCopyEndpoint(":/etc/hostname") == .guest("/etc/hostname"))
+        #expect(parseCopyEndpoint(":relative/path") == .guest("relative/path"))
+        #expect(parseCopyEndpoint(":") == .guest(""))
+    }
+
+    @Test
+    func vmShortIDIsStableAndPathSensitive() throws {
+        let a = URL(fileURLWithPath: "/tmp/vm4a/demo")
+        let b = URL(fileURLWithPath: "/tmp/vm4a/demo/")
+        let c = URL(fileURLWithPath: "/tmp/vm4a/other")
+
+        let idA = vmShortID(forPath: a)
+        let idB = vmShortID(forPath: b)
+        let idC = vmShortID(forPath: c)
+
+        #expect(idA.hasPrefix("vm-"))
+        #expect(idA.count == 3 + 12)
+        #expect(idA == idB)             // trailing slash should not change identity
+        #expect(idA != idC)
+    }
+
+    @Test
+    func runProcessRespectsTimeoutAndKillsChild() throws {
+        let started = Date()
+        let result = runProcess(executable: "/bin/sleep", arguments: ["10"], timeout: 0.5)
+        let elapsed = Date().timeIntervalSince(started)
+
+        #expect(result.timedOut == true)
+        #expect(elapsed < 4.0)          // SIGTERM, then SIGKILL ~1s later
+        #expect(result.exitCode != 0)
+    }
+
+    @Test
+    func runProcessReturnsExitZeroForTrue() throws {
+        let result = runProcess(executable: "/usr/bin/true", arguments: [], timeout: 5)
+        #expect(result.exitCode == 0)
+        #expect(!result.timedOut)
+    }
+
+    @Test
     func loadModelFallsBackToEmptyStateWhenStateFileMissing() throws {
         let testRoot = URL(fileURLWithPath: NSTemporaryDirectory())
             .appending(path: "vm4a-core-tests-\(UUID().uuidString)", directoryHint: .isDirectory)

@@ -40,6 +40,19 @@ Before running anything:
 
 ## Command map (when to reach for each)
 
+**Agent-first primitives (prefer these for any agent-driven flow):**
+
+| Intent | Command |
+| --- | --- |
+| One-shot create+start, wait for SSH | `vm4a spawn NAME --from ghcr.io/you/img:tag --wait-ssh --output json` |
+| Run a command in the guest, get JSON | `vm4a exec /path/to/bundle --output json -- python3 -c 'print(1+1)'` |
+| Copy a file host→guest | `vm4a cp /path/to/bundle ./local.txt :/work/remote.txt` |
+| Copy a file guest→host | `vm4a cp /path/to/bundle :/var/log/syslog ./syslog.txt` |
+| Fork a bundle, auto-start, wait for SSH | `vm4a fork SRC DST --auto-start --from-snapshot clean.vzstate --wait-ssh` |
+| Reset to a saved snapshot for retry | `vm4a reset /path/to/bundle --from clean.vzstate --wait-ip` |
+
+**Classic lifecycle:**
+
 | Intent | Command |
 | --- | --- |
 | Create a Linux VM bundle | `vm4a create NAME --os linux [--image ISO.iso] [--bridged-interface en0] [--rosetta]` |
@@ -63,7 +76,31 @@ Before running anything:
 
 ## Key workflows
 
-### Spin up a disposable Ubuntu VM
+### Agent loop (recommended — uses v2 primitives)
+
+```bash
+# 1. First-time bootstrap: pull, start (arm save-on-stop), wait for SSH.
+vm4a spawn dev --from ghcr.io/yourorg/python-dev-arm64:latest \
+  --storage /tmp/vm4a \
+  --save-on-stop /tmp/vm4a/dev/clean.vzstate \
+  --wait-ssh --output json
+
+# 2. Install whatever, then stop — VM saves state on shutdown.
+vm4a exec /tmp/vm4a/dev -- bash -lc "apt-get install -y ripgrep"
+vm4a stop /tmp/vm4a/dev
+
+# 3. Per-task: fork the golden bundle, push code, run, parse JSON.
+vm4a fork /tmp/vm4a/dev /tmp/vm4a/task-$JOB_ID \
+  --auto-start --from-snapshot /tmp/vm4a/dev/clean.vzstate --wait-ssh
+vm4a cp   /tmp/vm4a/task-$JOB_ID ./step.py :/work/step.py
+vm4a exec /tmp/vm4a/task-$JOB_ID --output json --timeout 120 \
+  -- python3 /work/step.py
+
+# 4. Bad task state? Reset back to the snapshot in <1s.
+vm4a reset /tmp/vm4a/task-$JOB_ID --from /tmp/vm4a/dev/clean.vzstate --wait-ip
+```
+
+### Spin up a disposable Ubuntu VM (manual / classic flow)
 
 ```bash
 ISO=~/Downloads/ubuntu-24.04-live-server-arm64.iso
@@ -117,8 +154,21 @@ entries), not O(disk image size).
 - **`vm4a stop` requires a running pid.** If `vm4a list` shows `stopped`
   but stale files exist, just re-run `vm4a run`; the CLI cleans stale
   PID files on the next list.
-- **`--output json` is available on `create`, `list`, `ip`, `agent status`.**
+- **`--output json` is available on `create`, `list`, `ip`, `agent status`,
+  and on every v2 primitive (`spawn`, `exec`, `cp`, `fork`, `reset`).**
   Output is one JSON object/array per command invocation (not JSONL).
+- **`vm4a exec` returns JSON with `exit_code`, `stdout`, `stderr`,
+  `duration_ms`, `timed_out`.** The exit code is also the process exit code
+  (so `if vm4a exec ... ; then ...` works in shell). With `--timeout` and a
+  timed-out command, the agent gets `timed_out: true` and a non-zero exit.
+- **`vm4a cp` uses `:` to mark guest paths**, not `host:` like docker cp. So
+  `./local.txt :/work/file.txt` is host→guest. Both sides being host or
+  both being guest is rejected.
+- **`vm4a fork` re-randomises `MachineIdentifier` automatically.** Don't
+  hand-roll a clone+identity flow — `fork` is what `clone` should have been
+  for agent loops, with optional `--auto-start` and `--from-snapshot`.
+- **`vm4a reset` requires a `.vzstate` file**, which means macOS 14+. On
+  older hosts the agent has to fall back to `clone` + reinstall.
 - **Guest agent is a scaffold.** Only `ping` is implemented. Don't promise
   clipboard/shutdown/script execution yet.
 
@@ -154,7 +204,18 @@ Redirect to the GUI app for:
 
 ## What's new vs older guides
 
-Commands added recently (mention when relevant):
+Most recent (v2.0 P0 — agent-first primitives):
+- `spawn` (one-shot create+start with optional `--from <oci-ref>`, `--wait-ssh`)
+- `exec` (SSH-driven command runner with structured JSON return)
+- `cp` (SCP host ↔ guest with `:` prefix convention)
+- `fork` (clone + re-identify + optional auto-start with snapshot restore)
+- `reset` (stop + restart from snapshot for retry loops)
+
+For any agent / scripted flow, prefer these over the manual
+`create` → `run` → `ssh` chain. They handle PID management,
+snapshot wiring, and JSON output by default.
+
+Earlier additions (still relevant):
 - `push` / `pull` (OCI registry support, tart-style)
 - `network list`, `image list` (host introspection)
 - `ip`, `ssh` (NAT convenience)

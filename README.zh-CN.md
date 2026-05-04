@@ -27,23 +27,19 @@ VM4A 念作 **"VM for Agent"**，CLI 二进制叫 `vm4a`。
 
 ---
 
-## 当前状态 — v1.1（重新定位后的基础版本）
+## 当前状态 — v2.0 P0（Agent 原语已发布）
 
-这是 **EasyVM** 改名后的版本。代码、配置、OCI bundle 格式都没变，只换了名字。下面文档中的所有 v1 命令都按现状工作。
+面向 Agent 的 CLI 原语已经**全部就绪**。一个二进制就能从"我要个干净机器"跑到"我拿到 guest 里命令的 JSON 输出"，不用写任何胶水。
 
-下一个里程碑是 **v2.0 — Agent 原语**（设计中）：
-
-| v2 即将推出 | 用途 |
+| v2.0 P0 已发布 | 用途 |
 |---|---|
-| `vm4a spawn` | 一条命令从 OCI 镜像创建+启动 VM，支持 `--ttl`、`--network none\|nat\|host` |
-| `vm4a exec` | 在 guest 里执行命令，返回 `{exit_code, stdout, stderr}` JSON |
-| `vm4a cp` | 主机 ↔ guest 双向文件传输 |
-| `vm4a fork` / `vm4a reset` | 基于快照的并行 fork 与回滚 |
-| `vm4a mcp` | MCP server —— Claude Code / Cursor 把 VM4A 当原生工具看 |
-| `vm4a serve` | 本地 HTTP API 给各种 SDK 使用 |
-| GUI Time Machine | Agent 运行 session、快照时间线、文件系统 diff 视图 |
+| `vm4a spawn` | 一条命令从 OCI 镜像（`--from`）或本地 ISO（`--image`）创建+启动 VM，可选 `--wait-ip` / `--wait-ssh` |
+| `vm4a exec` | SSH 进 guest 执行命令，返回 `{exit_code, stdout, stderr, duration_ms, timed_out}` |
+| `vm4a cp` | SCP 双向文件传输 —— `:` 前缀标识 guest 路径 |
+| `vm4a fork` | APFS clonefile 克隆 bundle，可选自动启动（带快照恢复） |
+| `vm4a reset` | 停止 + 从 `.vzstate` 快照恢复 —— 给 try → fail → reset → retry 循环用 |
 
-在那之前，可以用 v1 的命令组合出同样的 Agent 工作流（见下文）。
+后续里程碑仍在设计中：`vm4a mcp`（给 Claude Code / Cursor 用的 MCP server）、`vm4a serve`（给 SDK 用的 HTTP API）、GUI Time Machine。详见[路线图](#路线图)。
 
 ---
 
@@ -73,35 +69,51 @@ cp ./.build/release/vm4a /usr/local/bin/
 
 ---
 
-## Agent 现在怎么用 VM4A（v1）
+## Agent 怎么用 VM4A
+
+推荐流程基于 v2 原语 —— 一个并行 Agent harness 只需要 spawn / exec / fork 三个调用，加一个 reset 回滚路径。
 
 ```bash
-# 1. 准备一次基础 VM（或者从 registry 拉一个现成的）
-vm4a pull ghcr.io/yourorg/python-dev-arm64:latest --storage /tmp/vm4a
-#   …或从 ISO + 你的 provisioning 脚本构建
+# 1. 一条命令完成 pull + 启动（启用关机时存快照）+ 等 SSH 就绪。
+vm4a spawn dev --from ghcr.io/yourorg/python-dev-arm64:latest \
+  --storage /tmp/vm4a \
+  --save-on-stop /tmp/vm4a/dev/clean.vzstate \
+  --wait-ssh --output json
+# → {"id":"vm-…","name":"dev","ip":"192.168.64.7","ssh_ready":true,…}
 
-# 2. 存一个干净状态的 snapshot 给 Agent 回滚用
-vm4a run /tmp/vm4a/python-dev --save-on-stop /tmp/vm4a/python-dev/clean.vzstate
-# …Agent SSH 进去做完初始化，然后…
-vm4a stop /tmp/vm4a/python-dev
+# 2. 装好 Agent 需要的东西后停掉 —— 关机时会自动存快照。
+vm4a exec /tmp/vm4a/dev -- bash -lc "apt-get install -y ripgrep"
+vm4a stop /tmp/vm4a/dev
 
-# 3. 每次 Agent 任务：clone、跑、丢
-vm4a clone /tmp/vm4a/python-dev /tmp/vm4a/task-$JOB_ID
-vm4a run   /tmp/vm4a/task-$JOB_ID --restore /tmp/vm4a/python-dev/clean.vzstate
-vm4a ssh   /tmp/vm4a/task-$JOB_ID -- "python /work/agent_step.py"
-vm4a stop  /tmp/vm4a/task-$JOB_ID
-rm -rf     /tmp/vm4a/task-$JOB_ID
+# 3. 每个任务：从 golden bundle fork 一份，把代码丢进去跑。
+vm4a fork /tmp/vm4a/dev /tmp/vm4a/task-$JOB_ID \
+  --auto-start --from-snapshot /tmp/vm4a/dev/clean.vzstate --wait-ssh
+vm4a cp   /tmp/vm4a/task-$JOB_ID ./agent_step.py :/work/step.py
+vm4a exec /tmp/vm4a/task-$JOB_ID --output json --timeout 120 \
+  -- python3 /work/step.py
+# → {"exit_code":0,"stdout":"…","stderr":"","duration_ms":3142,"timed_out":false}
+
+# 4. 任务把状态搞坏了？1 秒内回滚到 golden 快照。
+vm4a reset /tmp/vm4a/task-$JOB_ID --from /tmp/vm4a/dev/clean.vzstate --wait-ip
 ```
 
 所有命令都支持 `--output json`，Agent 不用做任何文本解析。
 
-`clone` 用 APFS 的 `clonefile(2)`，所以新建一个 task VM 是 **O(目录条目数)，不是 O(磁盘镜像大小)**。配合 `--restore` 从状态文件恢复，Agent 从"我要个干净机器"到"VM 跑起来了"基本是 1 秒级。
+`fork` 用 APFS 的 `clonefile(2)`，所以新建一个 task VM 是 **O(目录条目数)，不是 O(磁盘镜像大小)**。配合 `--from-snapshot` 从状态文件恢复，Agent 从"我要个干净机器"到"VM 跑起来了"基本是 1 秒级。
 
 ---
 
-## CLI 命令总览（v1.1，当前）
+## CLI 命令总览
 
 ```
+Agent 原语（v2.0 P0）
+vm4a spawn             一步创建+启动 VM，可等 IP / SSH 就绪
+vm4a exec              SSH 进 VM 跑命令，返回 JSON
+vm4a cp                SCP 主机 ↔ guest 拷文件（':' 前缀标 guest 路径）
+vm4a fork              APFS clonefile 克隆 bundle，可选自动启动
+vm4a reset             停 + 从 .vzstate 快照恢复 —— 给重试循环用
+
+经典生命周期
 vm4a create            创建 VM bundle
 vm4a list              列出某个目录下的 VM bundle
 vm4a run               启动 VM（默认后台；--foreground 前台）
@@ -118,6 +130,65 @@ vm4a agent ping        给 guest agent 发 ping（脚手架）
 ```
 
 `vm4a <subcommand> --help` 看完整选项。
+
+### Spawn
+
+```bash
+vm4a spawn <name> [--os linux|macOS] [--storage <dir>] \
+  (--from <oci-ref> | --image <iso-or-ipsw>) \
+  [--cpu <n>] [--memory-gb <n>] [--disk-gb <n>] \
+  [--bridged-interface <bsdName>] [--rosetta] \
+  [--restore <state.vzstate>] [--save-on-stop <state.vzstate>] \
+  [--wait-ip] [--wait-ssh] [--ssh-user <name>] [--ssh-key <path>] \
+  [--host <ip>] [--wait-timeout <seconds>] [--output text|json]
+```
+
+如果 `<storage>/<name>` 已存在，`spawn` 直接（重新）启动它；否则 `--from` 拉 OCI bundle，`--image` 从 ISO/IPSW 创建新的。`--output json` + `--wait-ssh` 一起用，Agent 一次调用就拿到 `{ip, ssh_ready: true}`，失败时也能快速失败。
+
+### Exec
+
+```bash
+vm4a exec <vm-path> [--user <name>] [--key <path>] [--host <ip>] \
+  [--timeout <seconds>] [--output text|json] -- <command...>
+```
+
+不加 `--output json` 时 stdout/stderr 流式输出，退出码作为本进程的退出码。加上 `--output json` 后返回 `{exit_code, stdout, stderr, duration_ms, timed_out}`，方便 Agent 决定重试、升级还是放过。Linux guest 默认 `root`，macOS guest 默认当前用户。
+
+### Cp
+
+```bash
+vm4a cp <vm-path> [-r] [--user <name>] [--key <path>] [--host <ip>] \
+  [--timeout <seconds>] [--output text|json] <source> <destination>
+```
+
+路径前缀 `:` 表示 guest 侧，否则是主机路径。两端必须**恰好一端**是 guest 路径。
+
+```bash
+vm4a cp /tmp/vm4a/dev ./local.py :/work/script.py        # 主机 → guest
+vm4a cp /tmp/vm4a/dev :/var/log/syslog ./syslog.txt      # guest → 主机
+vm4a cp /tmp/vm4a/dev -r ./project :/srv/code            # 递归
+```
+
+### Fork
+
+```bash
+vm4a fork <source-path> <destination-path> \
+  [--auto-start] [--from-snapshot <state.vzstate>] \
+  [--wait-ip] [--wait-ssh] [--ssh-user <name>] [--ssh-key <path>] \
+  [--wait-timeout <seconds>] [--output text|json]
+```
+
+APFS `clonefile(2)` 复制源 bundle，再重新随机化 `MachineIdentifier` 让 fork 启动后是独立机器。`--auto-start --from-snapshot` 一起用，并行就绪的 VM 大约 1 秒内能拿到。
+
+### Reset
+
+```bash
+vm4a reset <vm-path> --from <state.vzstate> \
+  [--wait-ip] [--stop-timeout <seconds>] [--wait-timeout <seconds>] \
+  [--output text|json]
+```
+
+给 `try → fail → reset → retry` Agent 循环用。停掉 VM（SIGTERM → SIGKILL）再从指定快照重启。需要 macOS 14+ 和提前存好的 `.vzstate`（看 `run --save-on-stop`）。
 
 ### Create
 
@@ -313,7 +384,7 @@ CLI 创建的 bundle 能在 GUI 里用，反之亦然。
 | 阶段 | 目标 | 状态 |
 | --- | --- | --- |
 | v1.1 | 完整 VM 生命周期 + OCI 分发 + 快照（即原 EasyVM 的能力） | ✅ 已发布 |
-| v2.0 P0 | Agent CLI 原语（`spawn`/`exec`/`cp`/`fork`/`reset`） | 🛠 设计中 |
+| v2.0 P0 | Agent CLI 原语（`spawn`/`exec`/`cp`/`fork`/`reset`） | ✅ 已发布 |
 | v2.0 P1 | MCP server，Claude Code / Cursor / Cline 直接接入 | 🛠 设计中 |
 | v2.1 | HTTP API + Python SDK | 计划中 |
 | v2.2 | 官方维护的 OCI 模板（`vm4a/python-dev`、`vm4a/xcode-dev`、`vm4a/ubuntu-base`） | 计划中 |

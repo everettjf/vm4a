@@ -44,8 +44,15 @@ func writeJSONLine<T: Encodable>(_ value: T) throws {
 struct VM4ACLI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "vm4a",
-        abstract: "VM4A standalone CLI",
+        abstract: "VM4A — Virtual Machines for Agents (Apple Silicon)",
         subcommands: [
+            // Agent-first primitives (P0)
+            SpawnCommand.self,
+            ExecCommand.self,
+            CpCommand.self,
+            ForkCommand.self,
+            ResetCommand.self,
+            // Classic lifecycle
             CreateCommand.self,
             ListCommand.self,
             RunCommand.self,
@@ -206,46 +213,9 @@ struct ListCommand: ParsableCommand {
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
-    struct Row: Encodable {
-        let name: String
-        let os: String
-        let status: String
-        let pid: Int32?
-        let path: String
-    }
-
     mutating func run() throws {
         let storageURL = URL(fileURLWithPath: storage, isDirectory: true)
-        let entries = try FileManager.default.contentsOfDirectory(
-            at: storageURL,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        )
-
-        var rows: [Row] = []
-        for entry in entries {
-            guard (try? entry.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
-                continue
-            }
-            let configURL = entry.appending(path: "config.json")
-            guard FileManager.default.fileExists(atPath: configURL.path(percentEncoded: false)),
-                  let model = try? loadModel(rootPath: entry) else {
-                continue
-            }
-            var pid = readPID(from: model.runPIDURL)
-            let running = pid.map(isProcessRunning(pid:)) ?? false
-            if pid != nil, !running {
-                clearPID(at: model.runPIDURL)
-                pid = nil
-            }
-            rows.append(.init(
-                name: model.config.name,
-                os: model.config.type.rawValue,
-                status: running ? "running" : "stopped",
-                pid: running ? pid : nil,
-                path: entry.path()
-            ))
-        }
+        let rows = listVMSummaries(in: storageURL)
 
         switch output {
         case .json:
@@ -256,7 +226,8 @@ struct ListCommand: ParsableCommand {
             } else {
                 for row in rows {
                     let status = row.status == "running" ? "running(pid:\(row.pid ?? 0))" : "stopped"
-                    print("\(row.name)\t\(row.os)\t\(status)\t\(row.path)")
+                    let ip = row.ip ?? "-"
+                    print("\(row.name)\t\(row.os)\t\(status)\t\(ip)\t\(row.path)")
                 }
             }
         }

@@ -27,23 +27,19 @@ VM4A is the codename **"VM for Agent"** — pronounced *"VM-for-A"*. The CLI is 
 
 ---
 
-## Status — v1.1 (rebranded foundation)
+## Status — v2.0 P0 (Agent primitives shipped)
 
-This is the rebranded successor to **EasyVM**. The codebase, configs, and OCI bundle layout are the same — only names changed. All the existing CLI commands work as documented below.
+The agent-first CLI primitives are **in**. One binary now takes you from "I want a clean machine" to "I have JSON output back from a command in the guest" without writing any glue.
 
-The next milestone is **v2.0 — Agent primitives** (in active design):
-
-| Coming in v2 | What it does |
+| Shipping in v2.0 P0 | What it does |
 |---|---|
-| `vm4a spawn` | One-shot create+run from an OCI image with `--ttl`, `--network none\|nat\|host` |
-| `vm4a exec` | Run a command in the guest, return `{exit_code, stdout, stderr}` as JSON |
-| `vm4a cp` | Bidirectional file transfer host ↔ guest |
-| `vm4a fork` / `vm4a reset` | Snapshot-based parallel forks and rollback |
-| `vm4a mcp` | MCP server — Claude Code / Cursor see VM4A as a native tool |
-| `vm4a serve` | Local HTTP API for SDKs |
-| GUI Time Machine | Agent run sessions, snapshot timeline, filesystem diff viewer |
+| `vm4a spawn` | One-shot create+start from an OCI image (`--from`) or local ISO (`--image`), with `--wait-ip` / `--wait-ssh` |
+| `vm4a exec` | SSH into the guest, run a command, return `{exit_code, stdout, stderr, duration_ms, timed_out}` |
+| `vm4a cp` | Bidirectional file transfer over SCP — `:` prefix marks the guest path |
+| `vm4a fork` | APFS clonefile a bundle and optionally auto-start it (with snapshot restore) |
+| `vm4a reset` | Stop + restore from a `.vzstate` snapshot — for try → fail → reset → retry loops |
 
-Until those land, you can already build the same agent flows on top of the v1 commands shown below.
+Still designing for later milestones: `vm4a mcp` (MCP server for Claude Code / Cursor), `vm4a serve` (HTTP API for SDKs), GUI Time Machine. See the [roadmap](#roadmap).
 
 ---
 
@@ -73,35 +69,51 @@ cp ./.build/release/vm4a /usr/local/bin/
 
 ---
 
-## How agents use VM4A today (v1)
+## How agents use VM4A
+
+The recommended flow uses the v2 primitives — a parallel agent harness needs three calls (spawn, exec, fork) and one rollback path (reset).
 
 ```bash
-# 1. Bootstrap a base VM once (or pull a pre-baked one)
-vm4a pull ghcr.io/yourorg/python-dev-arm64:latest --storage /tmp/vm4a
-#   …or build it from an ISO + your provisioning script
+# 1. One-shot pull + start (arm save-on-stop) + wait-for-SSH.
+vm4a spawn dev --from ghcr.io/yourorg/python-dev-arm64:latest \
+  --storage /tmp/vm4a \
+  --save-on-stop /tmp/vm4a/dev/clean.vzstate \
+  --wait-ssh --output json
+# → {"id":"vm-…","name":"dev","ip":"192.168.64.7","ssh_ready":true,…}
 
-# 2. Save a clean snapshot the agent can roll back to
-vm4a run /tmp/vm4a/python-dev --save-on-stop /tmp/vm4a/python-dev/clean.vzstate
-# …agent SSHs in, runs setup, then…
-vm4a stop /tmp/vm4a/python-dev
+# 2. Install whatever the agent needs, then stop — VM saves state on shutdown.
+vm4a exec /tmp/vm4a/dev -- bash -lc "apt-get install -y ripgrep"
+vm4a stop /tmp/vm4a/dev
 
-# 3. For each agent task: clone, run, throw away
-vm4a clone /tmp/vm4a/python-dev /tmp/vm4a/task-$JOB_ID
-vm4a run   /tmp/vm4a/task-$JOB_ID --restore /tmp/vm4a/python-dev/clean.vzstate
-vm4a ssh   /tmp/vm4a/task-$JOB_ID -- "python /work/agent_step.py"
-vm4a stop  /tmp/vm4a/task-$JOB_ID
-rm -rf     /tmp/vm4a/task-$JOB_ID
+# 3. Per-task: fork from the golden bundle and run code in it.
+vm4a fork /tmp/vm4a/dev /tmp/vm4a/task-$JOB_ID \
+  --auto-start --from-snapshot /tmp/vm4a/dev/clean.vzstate --wait-ssh
+vm4a cp   /tmp/vm4a/task-$JOB_ID ./agent_step.py :/work/step.py
+vm4a exec /tmp/vm4a/task-$JOB_ID --output json --timeout 120 \
+  -- python3 /work/step.py
+# → {"exit_code":0,"stdout":"…","stderr":"","duration_ms":3142,"timed_out":false}
+
+# 4. If the task corrupted state, reset back to the golden snapshot in <1s.
+vm4a reset /tmp/vm4a/task-$JOB_ID --from /tmp/vm4a/dev/clean.vzstate --wait-ip
 ```
 
 Every command supports `--output json` for clean parsing — no text wrangling required.
 
-`clone` uses APFS `clonefile(2)` so creating a fresh per-task VM is **O(directory entries), not O(disk image size)**. Combined with `--restore` from a state file, agents go from "I want a clean machine" to "VM is up and ready" in roughly a second per task.
+`fork` uses APFS `clonefile(2)` so creating a fresh per-task VM is **O(directory entries), not O(disk image size)**. Combined with `--from-snapshot`, agents go from "I want a clean machine" to "VM is up and ready" in roughly a second per task.
 
 ---
 
-## CLI reference (v1.1, current)
+## CLI reference
 
 ```
+Agent-first primitives (v2.0 P0)
+vm4a spawn             Create+start a VM in one shot, optionally wait for IP/SSH
+vm4a exec              Run a command inside a running VM via SSH; returns JSON
+vm4a cp                Copy files between host and guest via SCP (':' prefix = guest)
+vm4a fork              Clone a VM bundle (APFS clonefile) and optionally auto-start
+vm4a reset             Stop + restore from a .vzstate snapshot — for retry loops
+
+Classic lifecycle
 vm4a create            Create a VM bundle
 vm4a list              List VM bundles in a directory
 vm4a run               Run a VM (detached by default; --foreground to stay attached)
@@ -118,6 +130,65 @@ vm4a agent ping        Send a ping command to the in-guest agent (scaffold)
 ```
 
 Run `vm4a <subcommand> --help` for the full option list.
+
+### Spawn
+
+```bash
+vm4a spawn <name> [--os linux|macOS] [--storage <dir>] \
+  (--from <oci-ref> | --image <iso-or-ipsw>) \
+  [--cpu <n>] [--memory-gb <n>] [--disk-gb <n>] \
+  [--bridged-interface <bsdName>] [--rosetta] \
+  [--restore <state.vzstate>] [--save-on-stop <state.vzstate>] \
+  [--wait-ip] [--wait-ssh] [--ssh-user <name>] [--ssh-key <path>] \
+  [--host <ip>] [--wait-timeout <seconds>] [--output text|json]
+```
+
+If `<storage>/<name>` already exists, `spawn` just (re)starts it. Otherwise `--from` pulls an OCI bundle, or `--image` creates a fresh VM from an ISO/IPSW. With `--output json` and `--wait-ssh`, agents get a single call that returns `{ip, ssh_ready: true}` or fails fast.
+
+### Exec
+
+```bash
+vm4a exec <vm-path> [--user <name>] [--key <path>] [--host <ip>] \
+  [--timeout <seconds>] [--output text|json] -- <command...>
+```
+
+Without `--output json`, stdout/stderr stream and the exit code becomes this process's exit code. With `--output json`, returns `{exit_code, stdout, stderr, duration_ms, timed_out}` so the agent can decide whether to retry, escalate, or move on. Default user is `root` for Linux guests, the current user for macOS guests.
+
+### Cp
+
+```bash
+vm4a cp <vm-path> [-r] [--user <name>] [--key <path>] [--host <ip>] \
+  [--timeout <seconds>] [--output text|json] <source> <destination>
+```
+
+The `:` prefix on a path marks it as the guest side; otherwise it's a host path. Exactly one side must be a guest path.
+
+```bash
+vm4a cp /tmp/vm4a/dev ./local.py :/work/script.py        # host → guest
+vm4a cp /tmp/vm4a/dev :/var/log/syslog ./syslog.txt      # guest → host
+vm4a cp /tmp/vm4a/dev -r ./project :/srv/code            # recursive
+```
+
+### Fork
+
+```bash
+vm4a fork <source-path> <destination-path> \
+  [--auto-start] [--from-snapshot <state.vzstate>] \
+  [--wait-ip] [--wait-ssh] [--ssh-user <name>] [--ssh-key <path>] \
+  [--wait-timeout <seconds>] [--output text|json]
+```
+
+APFS `clonefile(2)` from the source bundle, then re-randomises `MachineIdentifier` so the fork boots as a distinct machine. With `--auto-start --from-snapshot`, you get a parallel-ready VM in roughly a second.
+
+### Reset
+
+```bash
+vm4a reset <vm-path> --from <state.vzstate> \
+  [--wait-ip] [--stop-timeout <seconds>] [--wait-timeout <seconds>] \
+  [--output text|json]
+```
+
+For `try → fail → reset → retry` agent loops. Stops the VM (SIGTERM → SIGKILL) and restarts it from the supplied snapshot. Requires macOS 14+ and a previously saved `.vzstate` (see `--save-on-stop` on `run`).
 
 ### Create
 
@@ -313,7 +384,7 @@ Branch on these without parsing stderr.
 | Phase | Goal | Status |
 | --- | --- | --- |
 | v1.1 | Solid VM lifecycle + OCI distribution + snapshots (the EasyVM foundation) | ✅ shipped |
-| v2.0 P0 | Agent CLI primitives (`spawn`, `exec`, `cp`, `fork`, `reset`) over the v1 commands | 🛠 designing |
+| v2.0 P0 | Agent CLI primitives (`spawn`, `exec`, `cp`, `fork`, `reset`) over the v1 commands | ✅ shipped |
 | v2.0 P1 | MCP server — drop-in tool for Claude Code / Cursor / Cline | 🛠 designing |
 | v2.1 | HTTP API + Python SDK | planned |
 | v2.2 | Curated OCI templates (`vm4a/python-dev`, `vm4a/xcode-dev`, `vm4a/ubuntu-base`) | planned |
