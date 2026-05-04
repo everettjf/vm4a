@@ -276,6 +276,38 @@ struct CoreTests {
     }
 
     @Test
+    func sha256MatchesKnownVectors() throws {
+        // empty string
+        #expect(sha256Hex(of: Data()) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+        // "abc"
+        #expect(sha256Hex(of: Data("abc".utf8)) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    }
+
+    @Test
+    func imageCacheDirectoryIsCreatable() throws {
+        let dir = try ImageCache.directory()
+        var isDir: ObjCBool = false
+        #expect(FileManager.default.fileExists(atPath: dir.path(percentEncoded: false), isDirectory: &isDir))
+        #expect(isDir.boolValue)
+    }
+
+    @Test
+    func imageCacheKeyForRemoteIsStableAndDistinct() throws {
+        let a = try ImageCache.cachedURL(forRemote: URL(string: "https://example.com/foo.iso")!, ext: "iso")
+        let aAgain = try ImageCache.cachedURL(forRemote: URL(string: "https://example.com/foo.iso")!, ext: "iso")
+        let b = try ImageCache.cachedURL(forRemote: URL(string: "https://example.com/bar.iso")!, ext: "iso")
+        #expect(a == aAgain)
+        #expect(a != b)
+        #expect(a.pathExtension == "iso")
+    }
+
+    @Test
+    func macOSCatalogContainsLatestEntry() throws {
+        let entries = macOSCatalog()
+        #expect(entries.contains { $0.id == macOSLatestImageID })
+    }
+
+    @Test
     func networkModeParsesAliases() throws {
         #expect(NetworkMode.parse("none") == NetworkMode.none)
         #expect(NetworkMode.parse("nat") == .nat)

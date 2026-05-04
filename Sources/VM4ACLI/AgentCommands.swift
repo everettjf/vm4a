@@ -40,7 +40,7 @@ struct SpawnCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Pull this OCI reference if bundle does not yet exist")
     var from: String?
 
-    @Option(name: .long, help: "Local image path. Linux: ISO. macOS: IPSW.")
+    @Option(name: .long, help: "Image spec: catalog id (see `vm4a image list`), local file path, https:// URL, or omit for macOS to auto-fetch the latest IPSW.")
     var image: String?
 
     @Option(name: .long, help: "vCPU count")

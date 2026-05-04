@@ -30,16 +30,27 @@
 brew tap everettjf/tap && brew install vm4a
 ```
 
-拉一个预制镜像，跑一段代码：
+启动一个 VM 的三种方式，按"打字最少"排序：
 
 ```bash
+# 1. 拉预制好的镜像（最快 —— 不用花时间装系统）
 vm4a spawn dev \
     --from ghcr.io/everettjf/vm4a-templates/python-dev:latest \
     --storage /tmp/vm4a --wait-ssh
 
+# 2. 用 catalog id —— vm4a 自动下载 + 缓存 ISO/IPSW
+vm4a create demo --image ubuntu-24.04-arm64 --storage /tmp/vm4a --memory-gb 4
+vm4a create mac  --os macOS                  # 自动拉最新 macOS IPSW
+
+# 3. 本地路径或任意 https URL —— 也会自动缓存
+vm4a create demo --image ~/Downloads/ubuntu-24.04-arm64.iso
+vm4a create demo --image https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04.1-live-server-arm64.iso
+
 vm4a exec /tmp/vm4a/dev -- python3 -c 'print(1+1)'
 vm4a stop /tmp/vm4a/dev
 ```
+
+`vm4a image list` 看现有 catalog id；`vm4a image pull <id>` 只下载不建 VM；`vm4a image where` 打印缓存目录（`~/.cache/vm4a/images/`）。
 
 每个命令都支持 `--output json`，便于脚本解析。任何子命令的 `--help` 都是它自己选项的权威说明。
 

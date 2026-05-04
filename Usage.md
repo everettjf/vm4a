@@ -30,16 +30,27 @@ How to actually drive `vm4a` — every command, every integration, with worked e
 brew tap everettjf/tap && brew install vm4a
 ```
 
-Pull a pre-baked image and run a command in it:
+Three ways to get a VM running, in order of "least typing":
 
 ```bash
+# 1. Pull a pre-baked image (fastest — no install cost)
 vm4a spawn dev \
     --from ghcr.io/everettjf/vm4a-templates/python-dev:latest \
     --storage /tmp/vm4a --wait-ssh
 
+# 2. Use a curated catalog id — vm4a downloads + caches the ISO/IPSW for you
+vm4a create demo --image ubuntu-24.04-arm64 --storage /tmp/vm4a --memory-gb 4
+vm4a create mac  --os macOS                  # auto-fetches latest macOS IPSW
+
+# 3. Pass a local path or any https URL — also auto-cached
+vm4a create demo --image ~/Downloads/ubuntu-24.04-arm64.iso
+vm4a create demo --image https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04.1-live-server-arm64.iso
+
 vm4a exec /tmp/vm4a/dev -- python3 -c 'print(1+1)'
 vm4a stop /tmp/vm4a/dev
 ```
+
+`vm4a image list` shows what catalog ids exist; `vm4a image pull <id>` prefetches without creating a VM; `vm4a image where` prints the cache directory (`~/.cache/vm4a/images/`).
 
 Every command supports `--output json` for machine-readable output. The `--help` of any subcommand is the canonical reference for its options.
 

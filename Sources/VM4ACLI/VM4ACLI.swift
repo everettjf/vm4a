@@ -85,7 +85,7 @@ struct CreateCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Parent directory to store VM bundles")
     var storage: String = FileManager.default.currentDirectoryPath
 
-    @Option(name: .long, help: "Initial image path. Linux: ISO. macOS: IPSW (drives full install).")
+    @Option(name: .long, help: "Image spec: catalog id (see `vm4a image list`), local file path, https:// URL, or omit for macOS to auto-fetch the latest IPSW.")
     var image: String?
 
     @Option(name: .long, help: "vCPU count")
@@ -113,12 +113,27 @@ struct CreateCommand: AsyncParsableCommand {
         let storageURL = URL(fileURLWithPath: storage, isDirectory: true)
         let memoryBytes = try memoryGB.map { try bytesFromGB($0, fieldName: "memory-gb") }
         let diskBytes = try diskGB.map { try bytesFromGB($0, fieldName: "disk-gb") }
+
+        let progressSink: @Sendable (String) -> Void = { line in
+            FileHandle.standardError.write(Data("\(line)\n".utf8))
+        }
+
+        // Resolve --image (catalog id / URL / local path) into a real file
+        // path on disk, downloading + caching if needed.
+        let resolvedImagePath: String?
+        if image != nil || os == .macOS {
+            let resolved = try await resolveImage(spec: image, os: os, progress: progressSink)
+            resolvedImagePath = resolved.path()
+        } else {
+            resolvedImagePath = nil
+        }
+
         let outcome = try await createBundle(
             options: CreateBundleOptions(
                 name: name,
                 os: os,
                 storage: storageURL,
-                imagePath: image,
+                imagePath: resolvedImagePath,
                 cpu: cpu,
                 memoryBytes: memoryBytes,
                 diskBytes: diskBytes,
@@ -126,7 +141,7 @@ struct CreateCommand: AsyncParsableCommand {
                 bridgedInterface: bridgedInterface,
                 rosetta: rosetta
             ),
-            progress: { line in FileHandle.standardError.write(Data("\(line)\n".utf8)) }
+            progress: progressSink
         )
         if let warning = outcome.rosettaWarning {
             FileHandle.standardError.write(Data("warning: \(warning)\n".utf8))
@@ -373,19 +388,77 @@ struct ListBridgedCommand: ParsableCommand {
 struct ImageCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "image",
-        abstract: "Linux image catalog and local operations",
-        subcommands: [ImageListCommand.self],
+        abstract: "Image catalog: list, prefetch, locate cached files",
+        subcommands: [ImageListCommand.self, ImagePullCommand.self, ImageWhereCommand.self],
         defaultSubcommand: ImageListCommand.self
     )
 }
 
 struct ImageListCommand: ParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "list", abstract: "List curated Linux ARM64 images")
+    static let configuration = CommandConfiguration(commandName: "list", abstract: "List curated images (Linux ISOs + macOS IPSW)")
 
     mutating func run() throws {
+        print("# Linux (ARM64)")
         for entry in linuxImageCatalog() {
             print("\(entry.id)\t\(entry.displayName)")
             print("  \(entry.url)")
+        }
+        print("")
+        print("# macOS")
+        for entry in macOSCatalog() {
+            print("\(entry.id)\t\(entry.displayName)")
+            if entry.url.hasPrefix("vz://") {
+                print("  (resolved at fetch time via VZMacOSRestoreImage.fetchLatestSupported)")
+            } else {
+                print("  \(entry.url)")
+            }
+        }
+    }
+}
+
+struct ImagePullCommand: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "pull",
+        abstract: "Download an image to ~/.cache/vm4a/images/ (no-op if already cached)"
+    )
+
+    @Argument(help: "Catalog id (see `vm4a image list`), https:// URL, or `macos-latest`")
+    var spec: String
+
+    mutating func run() async throws {
+        // Pick os heuristically: known Linux catalog ids or macos-latest decide it;
+        // otherwise treat as Linux ISO unless extension hints IPSW.
+        let os: VMOSType
+        if spec == macOSLatestImageID || macOSCatalog().contains(where: { $0.id == spec }) {
+            os = .macOS
+        } else if spec.hasSuffix(".ipsw") {
+            os = .macOS
+        } else {
+            os = .linux
+        }
+        let resolved = try await resolveImage(
+            spec: spec,
+            os: os,
+            progress: { line in FileHandle.standardError.write(Data("\(line)\n".utf8)) }
+        )
+        print(resolved.path())
+    }
+}
+
+struct ImageWhereCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "where",
+        abstract: "Print the cache directory and any cached image files"
+    )
+
+    mutating func run() throws {
+        let dir = try ImageCache.directory()
+        print(dir.path())
+        let entries = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey])) ?? []
+        for e in entries {
+            let size = (try? e.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            let mb = Double(size) / 1_048_576.0
+            print(String(format: "  %@\t%.1f MB", e.lastPathComponent, mb))
         }
     }
 }

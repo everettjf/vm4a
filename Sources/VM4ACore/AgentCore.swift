@@ -351,12 +351,19 @@ public func runSpawn(
             if pulled.path() != bundleURL.path() {
                 try FileManager.default.moveItem(at: pulled, to: bundleURL)
             }
-        } else if options.imagePath != nil {
+        } else if options.imagePath != nil || options.os == .macOS {
+            // Resolve the image spec (catalog id / URL / local path / nil-for-macOS-latest)
+            // into a real cached file before building the bundle.
+            let resolved = try await resolveImage(
+                spec: options.imagePath,
+                os: options.os,
+                progress: progress
+            )
             try await createBundle(options: CreateBundleOptions(
                 name: options.name,
                 os: options.os,
                 storage: options.storage,
-                imagePath: options.imagePath,
+                imagePath: resolved.path(),
                 cpu: options.cpu,
                 memoryBytes: options.memoryBytes,
                 diskBytes: options.diskBytes,
@@ -365,7 +372,7 @@ public func runSpawn(
                 rosetta: options.rosetta
             ), progress: progress)
         } else {
-            throw VM4AError.message("Bundle '\(bundleURL.path())' not found. Pass --from <oci-ref> or --image <path>.")
+            throw VM4AError.message("Bundle '\(bundleURL.path())' not found. Pass --from <oci-ref> or --image <spec>.")
         }
     }
 
