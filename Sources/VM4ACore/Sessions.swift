@@ -180,6 +180,63 @@ public func nextSessionSeq(_ id: String) -> Int { _SessionSeq.shared.next(id) }
 
 // MARK: - Recording helper
 
+/// Mutable recorder that captures duration + outcome around a runner call.
+/// Use with `defer` so the success and the throwing paths both log.
+///
+///     let recorder = SessionRecorder(id: session, kind: "spawn", args: [...])
+///     defer { recorder.record() }
+///     let outcome = try await runSpawn(...)
+///     recorder.markSuccess(vmPath: outcome.path, outcome: try? jsonValue(outcome),
+///                          summary: "spawn \(outcome.name)")
+public final class SessionRecorder: @unchecked Sendable {
+    public let id: String?
+    public let kind: String
+    public let args: [String: JSONValue]
+    public let started: Date
+
+    public var vmPath: String?
+    public var outcomeJSON: JSONValue?
+    public var success: Bool = false
+    public var summary: String?
+
+    public init(id: String?, kind: String, args: [String: JSONValue], vmPath: String? = nil) {
+        self.id = id
+        self.kind = kind
+        self.args = args
+        self.vmPath = vmPath
+        self.started = Date()
+        self.summary = "\(kind) (failed before reaching outcome)"
+    }
+
+    public func markSuccess(vmPath: String?, outcome: JSONValue?, summary: String) {
+        self.vmPath = vmPath ?? self.vmPath
+        self.outcomeJSON = outcome
+        self.success = true
+        self.summary = summary
+    }
+
+    public func markFailure(vmPath: String? = nil, summary: String) {
+        if let vmPath { self.vmPath = vmPath }
+        self.success = false
+        self.summary = summary
+    }
+
+    public func record() {
+        let durationMs = Int(Date().timeIntervalSince(started) * 1000)
+        recordSessionEvent(
+            id: id,
+            kind: kind,
+            vmPath: vmPath,
+            args: args,
+            outcome: outcomeJSON,
+            success: success,
+            durationMs: durationMs,
+            summary: summary,
+            timestamp: started
+        )
+    }
+}
+
 /// Best-effort event recorder. If `id` is nil, does nothing. Failures
 /// (disk full, permission denied, etc.) are swallowed — the agent flow
 /// must not break because of log I/O.

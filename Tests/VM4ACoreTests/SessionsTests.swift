@@ -95,6 +95,53 @@ struct SessionsTests {
     }
 
     @Test
+    func sessionRecorderRecordsFailureWhenMarkSuccessNotCalled() throws {
+        let bundle = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appending(path: "vm4a-rec-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: bundle) }
+
+        let id = "fail-\(UUID().uuidString)"
+        let recorder = SessionRecorder(
+            id: id,
+            kind: "exec",
+            args: ["command": .array([.string("nope")])],
+            vmPath: bundle.path()
+        )
+        // Simulate a thrown call before reaching markSuccess.
+        recorder.record()
+
+        let events = try SessionStore.read(id: id, bundlePath: bundle.path())
+        #expect(events.count == 1)
+        #expect(events[0].success == false)
+        #expect(events[0].kind == "exec")
+        #expect(events[0].summary?.contains("failed") == true)
+    }
+
+    @Test
+    func sessionRecorderRecordsSuccessWhenMarked() throws {
+        let bundle = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appending(path: "vm4a-rec-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: bundle) }
+
+        let id = "ok-\(UUID().uuidString)"
+        let recorder = SessionRecorder(
+            id: id,
+            kind: "fork",
+            args: [:],
+            vmPath: bundle.path()
+        )
+        recorder.markSuccess(vmPath: bundle.path(), outcome: nil, summary: "fork ok")
+        recorder.record()
+
+        let events = try SessionStore.read(id: id, bundlePath: bundle.path())
+        #expect(events.count == 1)
+        #expect(events[0].success == true)
+        #expect(events[0].summary == "fork ok")
+    }
+
+    @Test
     func malformedJSONLLineIsSkippedNotFatal() throws {
         let bundle = URL(fileURLWithPath: NSTemporaryDirectory())
             .appending(path: "vm4a-sess-\(UUID().uuidString)", directoryHint: .isDirectory)

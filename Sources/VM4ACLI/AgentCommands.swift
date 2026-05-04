@@ -88,7 +88,14 @@ struct SpawnCommand: AsyncParsableCommand {
 
     mutating func run() async throws {
         let storageURL = URL(fileURLWithPath: storage, isDirectory: true)
-        let started = Date()
+        let recorder = SessionRecorder(id: session, kind: "spawn", args: [
+            "name": .string(name),
+            "os": .string(os.rawValue),
+            "from": from.map { .string($0) } ?? .null,
+            "image": image.map { .string($0) } ?? .null,
+        ])
+        defer { recorder.record() }
+
         let memoryBytes = try memoryGB.map { try bytesFromGB($0, fieldName: "memory-gb") }
         let diskBytes = try diskGB.map { try bytesFromGB($0, fieldName: "disk-gb") }
         let options = SpawnOptions(
@@ -119,19 +126,9 @@ struct SpawnCommand: AsyncParsableCommand {
             }
         )
 
-        recordSessionEvent(
-            id: session,
-            kind: "spawn",
+        recorder.markSuccess(
             vmPath: outcome.path,
-            args: [
-                "name": .string(name),
-                "os": .string(os.rawValue),
-                "from": from.map { .string($0) } ?? .null,
-                "image": image.map { .string($0) } ?? .null
-            ],
             outcome: try? jsonValue(outcome),
-            success: true,
-            durationMs: Int(Date().timeIntervalSince(started) * 1000),
             summary: "spawn \(outcome.name) → ip=\(outcome.ip ?? "-") ssh=\(outcome.sshReady)"
         )
 
@@ -191,6 +188,14 @@ struct ExecCommand: ParsableCommand {
         guard !command.isEmpty else {
             throw VM4AError.message("Provide a command after `--`. Example: vm4a exec /path/to/vm -- whoami")
         }
+        let recorder = SessionRecorder(
+            id: session,
+            kind: "exec",
+            args: ["command": .array(command.map { .string($0) })],
+            vmPath: vmPath
+        )
+        defer { recorder.record() }
+
         let result = try runExec(options: ExecOptions(
             vmPath: vmPath,
             user: user,
@@ -200,16 +205,19 @@ struct ExecCommand: ParsableCommand {
             command: command
         ))
 
-        recordSessionEvent(
-            id: session,
-            kind: "exec",
-            vmPath: vmPath,
-            args: ["command": .array(command.map { .string($0) })],
-            outcome: try? jsonValue(result),
-            success: result.exitCode == 0,
-            durationMs: result.durationMs,
-            summary: "exec \(command.first ?? "") → exit \(result.exitCode)\(result.timedOut ? " (timed out)" : "")"
-        )
+        if result.exitCode == 0 {
+            recorder.markSuccess(
+                vmPath: vmPath,
+                outcome: try? jsonValue(result),
+                summary: "exec \(command.first ?? "") → exit 0"
+            )
+        } else {
+            recorder.outcomeJSON = try? jsonValue(result)
+            recorder.markFailure(
+                vmPath: vmPath,
+                summary: "exec \(command.first ?? "") → exit \(result.exitCode)\(result.timedOut ? " (timed out)" : "")"
+            )
+        }
 
         switch output {
         case .json:
@@ -271,6 +279,18 @@ struct CpCommand: ParsableCommand {
     var session: String?
 
     mutating func run() throws {
+        let recorder = SessionRecorder(
+            id: session,
+            kind: "cp",
+            args: [
+                "source": .string(source),
+                "destination": .string(destination),
+                "recursive": .bool(recursive),
+            ],
+            vmPath: vmPath
+        )
+        defer { recorder.record() }
+
         let result = try runCp(options: CpOptions(
             vmPath: vmPath,
             source: source,
@@ -282,20 +302,19 @@ struct CpCommand: ParsableCommand {
             timeout: TimeInterval(timeout)
         ))
 
-        recordSessionEvent(
-            id: session,
-            kind: "cp",
-            vmPath: vmPath,
-            args: [
-                "source": .string(source),
-                "destination": .string(destination),
-                "recursive": .bool(recursive)
-            ],
-            outcome: try? jsonValue(result),
-            success: result.exitCode == 0,
-            durationMs: result.durationMs,
-            summary: "cp \(source) → \(destination) (exit \(result.exitCode))"
-        )
+        if result.exitCode == 0 {
+            recorder.markSuccess(
+                vmPath: vmPath,
+                outcome: try? jsonValue(result),
+                summary: "cp \(source) → \(destination)"
+            )
+        } else {
+            recorder.outcomeJSON = try? jsonValue(result)
+            recorder.markFailure(
+                vmPath: vmPath,
+                summary: "cp \(source) → \(destination) (exit \(result.exitCode))"
+            )
+        }
 
         switch output {
         case .json:
@@ -356,7 +375,17 @@ struct ForkCommand: ParsableCommand {
     var session: String?
 
     mutating func run() throws {
-        let started = Date()
+        let recorder = SessionRecorder(
+            id: session,
+            kind: "fork",
+            args: [
+                "source_path": .string(sourcePath),
+                "destination_path": .string(destinationPath),
+                "auto_start": .bool(autoStart),
+            ]
+        )
+        defer { recorder.record() }
+
         let outcome = try runFork(
             options: ForkOptions(
                 sourcePath: sourcePath,
@@ -372,18 +401,9 @@ struct ForkCommand: ParsableCommand {
             executable: try ownExecutablePath()
         )
 
-        recordSessionEvent(
-            id: session,
-            kind: "fork",
+        recorder.markSuccess(
             vmPath: outcome.path,
-            args: [
-                "source_path": .string(sourcePath),
-                "destination_path": .string(destinationPath),
-                "auto_start": .bool(autoStart)
-            ],
             outcome: try? jsonValue(outcome),
-            success: true,
-            durationMs: Int(Date().timeIntervalSince(started) * 1000),
             summary: "fork \(sourcePath) → \(outcome.path)\(outcome.started ? " (started)" : "")"
         )
 
@@ -432,7 +452,14 @@ struct ResetCommand: ParsableCommand {
     var session: String?
 
     mutating func run() throws {
-        let started = Date()
+        let recorder = SessionRecorder(
+            id: session,
+            kind: "reset",
+            args: ["from": .string(from)],
+            vmPath: vmPath
+        )
+        defer { recorder.record() }
+
         let outcome = try runReset(
             options: ResetOptions(
                 vmPath: vmPath,
@@ -444,14 +471,9 @@ struct ResetCommand: ParsableCommand {
             executable: try ownExecutablePath()
         )
 
-        recordSessionEvent(
-            id: session,
-            kind: "reset",
+        recorder.markSuccess(
             vmPath: outcome.path,
-            args: ["from": .string(from)],
             outcome: try? jsonValue(outcome),
-            success: true,
-            durationMs: Int(Date().timeIntervalSince(started) * 1000),
             summary: "reset \(outcome.path) ← \(outcome.restored)"
         )
 
