@@ -81,7 +81,7 @@ cp ./.build/release/vm4a /usr/local/bin/
 
 ---
 
-## 当前状态 — v2.3+v2.4 基础设施
+## 当前状态 — v2.4（warm-pool 运行时 + 网络沙盒已发布）
 
 | 阶段 | 目标 | 状态 |
 |---|---|---|
@@ -90,8 +90,8 @@ cp ./.build/release/vm4a /usr/local/bin/
 | v2.0 P1 | MCP server（`vm4a mcp`），Claude Code / Cursor / Cline 接入 | ✅ 已发布 |
 | v2.1 | HTTP API（`vm4a serve`）+ Python SDK | ✅ 已发布 |
 | v2.2 | 官方 OCI 模板（`ubuntu-base`/`python-dev`/`xcode-dev`） | ✅ 已发布（构建脚本 + CI） |
-| v2.3 | GUI Time Machine | 🛠 CLI/数据基础已完成（`vm4a session`），SwiftUI 视图待做 |
-| v2.4 | 预热 VM 池、网络沙盒、资源 cap | 🛠 池定义已完成（`vm4a pool`），warm runtime + 沙盒待做 |
+| v2.3 | Time Machine 视图（`vm4a-sessions` SwiftUI app + `vm4a session` CLI） | ✅ 已发布（独立 app；主 app 集成待做） |
+| v2.4 | 预热池运行时（`vm4a pool serve/acquire/release`）、`--network none\|nat\|bridged\|host` | ✅ 已发布（CPU/内存/磁盘大小之外的资源 cap + ISO 只读 是 VZ 限制下能做到的全部） |
 
 ---
 

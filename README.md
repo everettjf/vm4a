@@ -81,7 +81,7 @@ cp ./.build/release/vm4a /usr/local/bin/
 
 ---
 
-## Status — v2.3+v2.4 foundations
+## Status — v2.4 (warm-pool runtime + network sandbox shipped)
 
 | Phase | Goal | Status |
 |---|---|---|
@@ -90,8 +90,8 @@ cp ./.build/release/vm4a /usr/local/bin/
 | v2.0 P1 | MCP server (`vm4a mcp`) — Claude Code / Cursor / Cline | ✅ shipped |
 | v2.1 | HTTP API (`vm4a serve`) + Python SDK | ✅ shipped |
 | v2.2 | Curated OCI templates (`ubuntu-base`, `python-dev`, `xcode-dev`) | ✅ shipped (recipes + CI) |
-| v2.3 | GUI Time Machine | 🛠 CLI/data foundation in (`vm4a session`); SwiftUI viewer pending |
-| v2.4 | Pre-warmed VM pools, network sandbox, resource caps | 🛠 pool definitions in (`vm4a pool`); warm runtime + sandbox pending |
+| v2.3 | Time Machine viewer (`vm4a-sessions` SwiftUI app + `vm4a session` CLI) | ✅ shipped (standalone; main-app integration pending) |
+| v2.4 | Warm-pool runtime (`vm4a pool serve/acquire/release`), `--network none\|nat\|bridged\|host` | ✅ shipped (resource caps beyond CPU/memory/disk-size + ISO read-only intentionally limited by what VZ exposes) |
 
 ---
 
