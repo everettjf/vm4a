@@ -322,7 +322,30 @@ vm4a pool show py
 vm4a pool destroy py
 ```
 
-当前 `pool spawn` 等价于按定义参数调用 `fork --auto-start --from-snapshot`。真正的预热池运行时（提前 spawn N 台空闲 VM、毫秒级取一台、后台自动补）放在 v2.4。
+对延迟敏感的 workload 可以跑一个预热池 daemon。它保持 `--size N` 台空闲 VM 待命、被取走后自动补，`pool acquire` 是原子 `mv` 操作 —— 毫秒级取出：
+
+```bash
+# 创建带 size 的池定义
+vm4a pool create py \
+    --base /tmp/vm4a/python-dev \
+    --snapshot /tmp/vm4a/python-dev/clean.vzstate \
+    --prefix task --storage /tmp/vm4a-tasks \
+    --size 4
+
+# 启动 daemon（前台运行；重启安全 —— 会接管已有的 warm VM）
+vm4a pool serve py &
+
+# 每个任务：acquire（即时）、exec、release
+VM=$(vm4a pool acquire py --output json | jq -r .path)
+vm4a exec "$VM" -- python3 /work/step.py
+vm4a pool release "$VM"
+```
+
+磁盘上布局：
+- `<storage>/<prefix>-warm-<n>` —— 空闲，daemon 持有，待命
+- `<storage>/<prefix>-leased-<label>` —— 已被取走，归 agent 所有直到 `release`
+
+`pool spawn <name>` 是按需路径（不需要 daemon，等价于 `fork --auto-start`）；`pool acquire/release` 是预热路径。两种可以混用，看每个 workload 需要什么。
 
 ---
 

@@ -70,6 +70,52 @@ struct SessionsTests {
     }
 
     @Test
+    func poolDiscoverFindsWarmAndLeasedDirs() throws {
+        let storage = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appending(path: "vm4a-pool-discover-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: storage) }
+
+        // Plant a few directories matching pool naming
+        for n in ["py-warm-1", "py-warm-2", "py-leased-job-42", "unrelated"] {
+            try FileManager.default.createDirectory(
+                at: storage.appending(path: n),
+                withIntermediateDirectories: true
+            )
+        }
+
+        let pool = PoolDefinition(
+            name: "py", basePath: "/tmp/base", snapshot: nil,
+            prefix: "py", storage: storage.path(), size: 2
+        )
+        let (warm, leased) = pool.discover()
+        #expect(warm.count == 2)
+        #expect(leased.count == 1)
+        #expect(warm.contains { $0.lastPathComponent == "py-warm-1" })
+        #expect(leased.contains { $0.lastPathComponent == "py-leased-job-42" })
+    }
+
+    @Test
+    func poolDefinitionLegacyDecodeDefaultsSizeToZero() throws {
+        // Older bundles don't have the `size` field
+        let legacy = """
+        {"name":"old","basePath":"/tmp/x","snapshot":null,"prefix":"old","storage":"/tmp/storage"}
+        """
+        let pool = try JSONDecoder().decode(PoolDefinition.self, from: Data(legacy.utf8))
+        #expect(pool.size == 0)
+    }
+
+    @Test
+    func poolPathHelpersUseConfiguredPrefix() throws {
+        let pool = PoolDefinition(
+            name: "py", basePath: "/tmp/base", snapshot: nil,
+            prefix: "task", storage: "/tmp/store", size: 3
+        )
+        #expect(pool.warmPath(seq: 5).lastPathComponent == "task-warm-5")
+        #expect(pool.leasedPath(label: "abc").lastPathComponent == "task-leased-abc")
+    }
+
+    @Test
     func poolSaveAndLoadRoundTrips() throws {
         let name = "pooltest-\(UUID().uuidString.prefix(8))"
         let pool = PoolDefinition(

@@ -322,7 +322,30 @@ vm4a pool show py
 vm4a pool destroy py
 ```
 
-Today `pool spawn` is equivalent to `fork --auto-start --from-snapshot` driven from the saved definition. The warm-pool runtime (idle pre-spawned VMs handed out in milliseconds, refilled in the background) ships in v2.4.
+For latency-sensitive workloads, run a warm-pool daemon. It keeps `--size N` VMs idle and ready, refills on consumption, and `pool acquire` is an atomic filesystem rename — millisecond-fast hand-out:
+
+```bash
+# Create a sized pool definition
+vm4a pool create py \
+    --base /tmp/vm4a/python-dev \
+    --snapshot /tmp/vm4a/python-dev/clean.vzstate \
+    --prefix task --storage /tmp/vm4a-tasks \
+    --size 4
+
+# Run the daemon (foreground; restart-safe — picks up existing warm VMs)
+vm4a pool serve py &
+
+# Per task: acquire (instant), exec, release
+VM=$(vm4a pool acquire py --output json | jq -r .path)
+vm4a exec "$VM" -- python3 /work/step.py
+vm4a pool release "$VM"
+```
+
+Layout on disk:
+- `<storage>/<prefix>-warm-<n>` — idle, owned by the daemon, ready to hand out
+- `<storage>/<prefix>-leased-<label>` — claimed; agent owns it until `release`
+
+`pool spawn <name>` is the on-demand path (no daemon, equivalent to `fork --auto-start`); `pool acquire/release` is the warm path. Mix freely depending on what each workload needs.
 
 ---
 

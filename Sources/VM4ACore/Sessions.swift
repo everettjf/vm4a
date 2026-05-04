@@ -269,22 +269,69 @@ public func recordSessionEvent(
 
 // MARK: - Pools (v2.4 scaffolding — definitions only)
 
-/// A pool definition: how to mint a fresh per-task VM from a base bundle.
-/// The runtime that keeps N idle VMs warm is intentionally not part of
-/// this commit; see templates/POOLS.md for the design.
+/// A pool definition: how to mint a fresh per-task VM from a base bundle,
+/// optionally with a target warm-pool size that `vm4a pool serve` keeps
+/// idle and ready to hand out via `vm4a pool acquire`.
 public struct PoolDefinition: Codable, Sendable {
     public let name: String
     public let basePath: String
     public let snapshot: String?
-    public let prefix: String       // generated VMs are prefix-001, prefix-002, …
+    public let prefix: String       // generated VMs are prefix-warm-1, prefix-leased-…
     public let storage: String
+    public let size: Int            // warm-pool target size; 0 = no daemon
 
-    public init(name: String, basePath: String, snapshot: String?, prefix: String, storage: String) {
+    public init(name: String, basePath: String, snapshot: String?, prefix: String, storage: String, size: Int = 0) {
         self.name = name
         self.basePath = basePath
         self.snapshot = snapshot
         self.prefix = prefix
         self.storage = storage
+        self.size = size
+    }
+
+    enum CodingKeys: String, CodingKey { case name, basePath, snapshot, prefix, storage, size }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.name = try c.decode(String.self, forKey: .name)
+        self.basePath = try c.decode(String.self, forKey: .basePath)
+        self.snapshot = try c.decodeIfPresent(String.self, forKey: .snapshot)
+        self.prefix = try c.decode(String.self, forKey: .prefix)
+        self.storage = try c.decode(String.self, forKey: .storage)
+        // Pre-warm-runtime bundles don't have this field.
+        self.size = try c.decodeIfPresent(Int.self, forKey: .size) ?? 0
+    }
+
+    /// Naming helpers
+    public func warmPath(seq: Int) -> URL {
+        URL(fileURLWithPath: storage, isDirectory: true)
+            .appending(path: "\(prefix)-warm-\(seq)", directoryHint: .isDirectory)
+    }
+
+    public func leasedPath(label: String) -> URL {
+        URL(fileURLWithPath: storage, isDirectory: true)
+            .appending(path: "\(prefix)-leased-\(label)", directoryHint: .isDirectory)
+    }
+
+    /// Scan storage for warm + leased bundles belonging to this pool.
+    public func discover() -> (warm: [URL], leased: [URL]) {
+        let storageURL = URL(fileURLWithPath: storage, isDirectory: true)
+        let warmPrefix = "\(prefix)-warm-"
+        let leasedPrefix = "\(prefix)-leased-"
+        let entries = (try? FileManager.default.contentsOfDirectory(
+            at: storageURL,
+            includingPropertiesForKeys: nil
+        )) ?? []
+        var warm: [URL] = []
+        var leased: [URL] = []
+        for e in entries {
+            let name = e.lastPathComponent
+            if name.hasPrefix(warmPrefix) { warm.append(e) }
+            else if name.hasPrefix(leasedPrefix) { leased.append(e) }
+        }
+        warm.sort { $0.path < $1.path }
+        leased.sort { $0.path < $1.path }
+        return (warm, leased)
     }
 }
 
