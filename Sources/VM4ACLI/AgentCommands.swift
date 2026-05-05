@@ -383,6 +383,9 @@ struct ForkCommand: ParsableCommand {
     @Option(name: .long, help: "Wait timeout for IP / SSH in seconds")
     var waitTimeout: Int = 90
 
+    @Flag(name: .long, help: "Skip re-randomising MachineIdentifier on the fork. Required when restoring from a .vzstate that was saved on the source bundle (VZ matches saved state against platform identity).")
+    var keepIdentity: Bool = false
+
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
@@ -400,6 +403,7 @@ struct ForkCommand: ParsableCommand {
                 "source_path": .string(sourcePath),
                 "destination_path": .string(destinationPath),
                 "auto_start": .bool(autoStart),
+                "keep_identity": .bool(keepIdentity),
             ]
         )
         defer { recorder.record() }
@@ -414,7 +418,8 @@ struct ForkCommand: ParsableCommand {
                 waitSSH: waitSSH,
                 sshUser: sshUser,
                 sshKey: sshKey,
-                waitTimeout: TimeInterval(waitTimeout)
+                waitTimeout: TimeInterval(waitTimeout),
+                keepIdentity: keepIdentity
             ),
             executable: try ownExecutablePath()
         )

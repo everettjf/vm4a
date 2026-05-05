@@ -444,7 +444,8 @@ public actor MCPServer {
                         "wait_ssh": schemaBoolean("Wait for SSH"),
                         "ssh_user": schemaString("SSH user for probe"),
                         "ssh_key": schemaString("SSH key path"),
-                        "wait_timeout": schemaInteger("Seconds. Default 90.")
+                        "wait_timeout": schemaInteger("Seconds. Default 90."),
+                        "keep_identity": schemaBoolean("Skip MachineIdentifier re-randomisation. Required when from_snapshot was saved on the source bundle.")
                     ]
                 )
             ),
@@ -815,7 +816,8 @@ public actor MCPServer {
             waitSSH: obj["wait_ssh"]?.boolValue ?? false,
             sshUser: obj["ssh_user"]?.stringValue,
             sshKey: obj["ssh_key"]?.stringValue,
-            waitTimeout: TimeInterval(obj["wait_timeout"]?.intValue ?? 90)
+            waitTimeout: TimeInterval(obj["wait_timeout"]?.intValue ?? 90),
+            keepIdentity: obj["keep_identity"]?.boolValue ?? false
         ), executable: executable)
         return try textResult(outcome)
     }

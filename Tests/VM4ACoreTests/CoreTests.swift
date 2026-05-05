@@ -178,6 +178,48 @@ struct CoreTests {
     }
 
     @Test
+    func forkKeepIdentityPreservesMachineIdentifierBytes() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appending(path: "vm4a-fork-keepid-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let src = root.appending(path: "src", directoryHint: .isDirectory)
+        let dst1 = root.appending(path: "dst1", directoryHint: .isDirectory)
+        let dst2 = root.appending(path: "dst2", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: src, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        // Build a minimal Linux bundle with a known MachineIdentifier.
+        let config = VMConfigModel.defaults(
+            osType: .linux, name: "src", cpu: 1,
+            memoryBytes: 1 << 30, diskBytes: 1 << 30
+        )
+        let state = VMStateModel(imagePath: src)
+        let model = VMModel(rootPath: src, config: config, state: state)
+        try writeJSON(config, to: model.configURL)
+        try writeJSON(state, to: model.stateURL)
+        let knownID = VZGenericMachineIdentifier()
+        try knownID.dataRepresentation.write(to: model.machineIdentifierURL)
+        let knownBytes = try Data(contentsOf: model.machineIdentifierURL)
+
+        // Fork without --keep-identity → ID changes.
+        _ = try runFork(options: ForkOptions(
+            sourcePath: src.path(),
+            destinationPath: dst1.path(),
+            keepIdentity: false
+        ), executable: "/usr/bin/true")
+        let dst1Bytes = try Data(contentsOf: VMModel(rootPath: dst1, config: config, state: state).machineIdentifierURL)
+        #expect(dst1Bytes != knownBytes)
+
+        // Fork with --keep-identity → ID preserved bit-for-bit.
+        _ = try runFork(options: ForkOptions(
+            sourcePath: src.path(),
+            destinationPath: dst2.path(),
+            keepIdentity: true
+        ), executable: "/usr/bin/true")
+        let dst2Bytes = try Data(contentsOf: VMModel(rootPath: dst2, config: config, state: state).machineIdentifierURL)
+        #expect(dst2Bytes == knownBytes)
+    }
+
+    @Test
     func cloneDirectoryPreservesContentsAndBlocksExisting() throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appending(path: "vm4a-clone-\(UUID().uuidString)", directoryHint: .isDirectory)

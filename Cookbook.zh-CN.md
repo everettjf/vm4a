@@ -357,6 +357,64 @@ guest 里挂 `rosetta` 这个 virtiofs 共享并用 binfmt_misc 注册（[Apple 
 
 ---
 
+## 实战：golden image + 每日刷新 + 并行 ephemeral fork
+
+一个真实的 Agent 场景：base VM 里装 Python、clone 大仓库（~1 GB+）、存快照、每日刷新（`git pull`）、每个任务从最新快照 fork 一份并行使用。
+
+```bash
+BASE=/tmp/vm4a/base
+
+# 1. 一次性 bootstrap
+vm4a spawn base --image ubuntu-24.04-arm64 --storage /tmp/vm4a \
+    --memory-gb 8 --disk-gb 100 --wait-ssh
+vm4a exec $BASE -- bash -lc '
+    pyenv install 3.12 && pyenv global 3.12
+    mkdir -p /repos && cd /repos
+    git clone https://github.com/yourorg/repo-a
+    git clone https://github.com/yourorg/repo-b
+'
+
+# 2. 存第一个快照
+vm4a run $BASE --save-on-stop $BASE/v1.vzstate
+sleep 30
+vm4a stop $BASE
+ln -sf v1.vzstate $BASE/latest.vzstate
+
+# 3. 每日刷新（cron 跑这段）
+TODAY=$BASE/$(date +%Y%m%d).vzstate
+vm4a run $BASE --restore $BASE/latest.vzstate --save-on-stop $TODAY
+sleep 10
+vm4a exec $BASE -- bash -lc 'cd /repos && for r in */; do (cd "$r" && git pull --rebase); done'
+vm4a stop $BASE
+ln -sfn $(basename $TODAY) $BASE/latest.vzstate
+
+# 4. 每个任务 —— fork 一份 + 从最新快照 restore。
+#    --keep-identity 是**必须**的：VZ 用 MachineIdentifier 匹配快照保存时的状态，
+#    不加这个 flag，restore 会被拒。
+JOB=task-$(date +%s)
+vm4a fork $BASE /tmp/vm4a/$JOB \
+    --auto-start --from-snapshot $BASE/latest.vzstate \
+    --keep-identity --wait-ssh
+vm4a exec /tmp/vm4a/$JOB -- python3 /repos/repo-a/scripts/agent_step.py
+vm4a stop /tmp/vm4a/$JOB
+rm -rf /tmp/vm4a/$JOB
+```
+
+**为什么需要 `--keep-identity`？** 默认 `vm4a fork` 会重新随机化 `MachineIdentifier` 让每个 fork 是独立 VZ 机器。但 Apple 的 `VZVirtualMachine.restoreMachineStateFrom(url:)` 要求平台标识必须和保存时一致。所以只要 `--from-snapshot` 是源 bundle 上保存的，就要带 `--keep-identity`。网络 MAC 地址和 `MachineIdentifier` 是分开的，所以并行 fork 的 NAT DHCP 不会冲。
+
+**预热池自动处理这个问题** —— `vm4a pool serve` 在池定义里有 snapshot 时会自动传 `--keep-identity`，不需要额外配置：
+
+```bash
+vm4a pool create py --base $BASE --snapshot $BASE/latest.vzstate \
+    --prefix task --storage /tmp/vm4a-tasks --size 4
+vm4a pool serve py &                                 # 预热 4 台
+VM=$(vm4a pool acquire py --output json | jq -r .path)
+```
+
+同样的流程在 macOS guest 上也能跑 —— 把第一步的 `spawn` 加上 `--os macOS`，base bundle 过了 Setup Assistant 之后，剩下所有步骤完全一致。
+
+---
+
 ## 通用功能（macOS / Linux 都适用）
 
 ### 镜像与缓存

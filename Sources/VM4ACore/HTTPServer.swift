@@ -319,7 +319,8 @@ public func makeVM4ARouter(config: VM4AHTTPServerConfig) -> HTTPRouter {
                     waitSSH: args["wait_ssh"]?.boolValue ?? false,
                     sshUser: args["ssh_user"]?.stringValue,
                     sshKey: args["ssh_key"]?.stringValue,
-                    waitTimeout: TimeInterval(args["wait_timeout"]?.intValue ?? 90)
+                    waitTimeout: TimeInterval(args["wait_timeout"]?.intValue ?? 90),
+                    keepIdentity: args["keep_identity"]?.boolValue ?? false
                 ), executable: executable)
                 return .json(outcome)
             } catch {

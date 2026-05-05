@@ -355,6 +355,64 @@ Inside the guest, mount the virtiofs share named `rosetta` and register it with 
 
 ---
 
+## Recipe: golden image with daily refresh + parallel ephemeral forks
+
+A realistic agent setup: install Python, clone large repos (~1 GB+) into a base VM, snapshot it, refresh the snapshot daily with `git pull`, and spawn ephemeral parallel forks from the latest snapshot for each task.
+
+```bash
+BASE=/tmp/vm4a/base
+
+# 1. Bootstrap once
+vm4a spawn base --image ubuntu-24.04-arm64 --storage /tmp/vm4a \
+    --memory-gb 8 --disk-gb 100 --wait-ssh
+vm4a exec $BASE -- bash -lc '
+    pyenv install 3.12 && pyenv global 3.12
+    mkdir -p /repos && cd /repos
+    git clone https://github.com/yourorg/repo-a
+    git clone https://github.com/yourorg/repo-b
+'
+
+# 2. Save the first snapshot
+vm4a run $BASE --save-on-stop $BASE/v1.vzstate
+sleep 30
+vm4a stop $BASE
+ln -sf v1.vzstate $BASE/latest.vzstate
+
+# 3. Daily refresh (cron)
+TODAY=$BASE/$(date +%Y%m%d).vzstate
+vm4a run $BASE --restore $BASE/latest.vzstate --save-on-stop $TODAY
+sleep 10
+vm4a exec $BASE -- bash -lc 'cd /repos && for r in */; do (cd "$r" && git pull --rebase); done'
+vm4a stop $BASE
+ln -sfn $(basename $TODAY) $BASE/latest.vzstate
+
+# 4. Per task — fork the bundle and restore the latest snapshot.
+#    --keep-identity is REQUIRED here: VZ matches saved state against
+#    MachineIdentifier; without it the restore is rejected.
+JOB=task-$(date +%s)
+vm4a fork $BASE /tmp/vm4a/$JOB \
+    --auto-start --from-snapshot $BASE/latest.vzstate \
+    --keep-identity --wait-ssh
+vm4a exec /tmp/vm4a/$JOB -- python3 /repos/repo-a/scripts/agent_step.py
+vm4a stop /tmp/vm4a/$JOB
+rm -rf /tmp/vm4a/$JOB
+```
+
+**Why `--keep-identity`?** Plain `vm4a fork` re-randomises `MachineIdentifier` so each fork is a distinct VZ machine. But Apple's `VZVirtualMachine.restoreMachineStateFrom(url:)` requires the platform identity to match what was saved. Pass `--keep-identity` whenever `--from-snapshot` was saved on the source bundle. Network MAC addresses are independent of `MachineIdentifier`, so NAT DHCP still hands out unique IPs to parallel forks.
+
+For pre-warmed pools, `vm4a pool serve` automatically passes `--keep-identity` whenever the pool's definition includes a snapshot — no extra flag needed:
+
+```bash
+vm4a pool create py --base $BASE --snapshot $BASE/latest.vzstate \
+    --prefix task --storage /tmp/vm4a-tasks --size 4
+vm4a pool serve py &                                 # 4 warm forks pre-spawned
+VM=$(vm4a pool acquire py --output json | jq -r .path)
+```
+
+The same flow works for macOS guests once the base bundle is past Setup Assistant — pass `--os macOS` to the initial `spawn`, then everything else is identical.
+
+---
+
 ## Cross-cutting features (macOS / Linux)
 
 ### Images and cache

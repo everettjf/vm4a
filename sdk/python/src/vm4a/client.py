@@ -268,6 +268,7 @@ class Client:
         ssh_user: str | None = None,
         ssh_key: str | None = None,
         wait_timeout: int = 90,
+        keep_identity: bool = False,
         timeout: float | None = None,
     ) -> ForkOutcome:
         body = _drop_none({
@@ -276,6 +277,7 @@ class Client:
             "wait_ip": wait_ip, "wait_ssh": wait_ssh,
             "ssh_user": ssh_user, "ssh_key": ssh_key,
             "wait_timeout": wait_timeout,
+            "keep_identity": keep_identity,
         })
         effective = timeout if timeout is not None else max(self.default_timeout, wait_timeout + 5)
         return _from_dict(ForkOutcome, self._request("POST", "/v1/fork", body=body, timeout=effective))

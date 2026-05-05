@@ -204,7 +204,10 @@ struct PoolServeCommand: AsyncParsableCommand {
                             autoStart: true,
                             waitIP: false,
                             waitSSH: false,
-                            waitTimeout: 60
+                            waitTimeout: 60,
+                            // Keep identity when restoring from a snapshot —
+                            // VZ matches saved state against MachineIdentifier.
+                            keepIdentity: pool.snapshot != nil
                         ), executable: executable)
                     } catch {
                         FileHandle.standardError.write(Data("  spawn failed: \(error)\n".utf8))
@@ -347,7 +350,9 @@ struct PoolSpawnCommand: ParsableCommand {
             autoStart: true,
             waitIP: waitIP || waitSSH,
             waitSSH: waitSSH,
-            waitTimeout: TimeInterval(waitTimeout)
+            waitTimeout: TimeInterval(waitTimeout),
+            // Keep identity when restoring from a snapshot.
+            keepIdentity: pool.snapshot != nil
         ), executable: executable)
 
         switch output {

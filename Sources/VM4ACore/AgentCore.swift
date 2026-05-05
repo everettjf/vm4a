@@ -528,6 +528,11 @@ public struct ForkOptions: Sendable {
     public var sshUser: String?
     public var sshKey: String?
     public var waitTimeout: TimeInterval
+    /// When true, skip re-randomising MachineIdentifier on the fork.
+    /// Required when restoring `.vzstate` from the source bundle, since
+    /// VZ matches saved state against the platform identity. Default
+    /// false (each fork gets a unique identity).
+    public var keepIdentity: Bool
 
     public init(
         sourcePath: String,
@@ -538,7 +543,8 @@ public struct ForkOptions: Sendable {
         waitSSH: Bool = false,
         sshUser: String? = nil,
         sshKey: String? = nil,
-        waitTimeout: TimeInterval = 90
+        waitTimeout: TimeInterval = 90,
+        keepIdentity: Bool = false
     ) {
         self.sourcePath = sourcePath
         self.destinationPath = destinationPath
@@ -549,6 +555,7 @@ public struct ForkOptions: Sendable {
         self.sshUser = sshUser
         self.sshKey = sshKey
         self.waitTimeout = waitTimeout
+        self.keepIdentity = keepIdentity
     }
 }
 
@@ -562,7 +569,9 @@ public func runFork(options: ForkOptions, executable: String) throws -> ForkOutc
     let model = try loadModel(rootPath: dst)
     clearPID(at: model.runPIDURL)
     try? FileManager.default.removeItem(at: model.runLogURL)
-    try reidentifyVM(model: model)
+    if !options.keepIdentity {
+        try reidentifyVM(model: model)
+    }
 
     var pid: Int32?
     var ip: String?
