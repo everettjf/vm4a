@@ -100,8 +100,10 @@ cp ./.build/release/vm4a /usr/local/bin/
 ## 进一步阅读
 
 - **[Cookbook.zh-CN.md](Cookbook.zh-CN.md)** —— 实战手册：macOS / Linux guest 端到端工作流、Agent loop、sessions、pools、MCP/HTTP 接入
+- **[UseCases/](UseCases/)** —— 完整场景方案（比如 golden image + 每日刷新 + 并行 fork）
 - **[Usage.zh-CN.md](Usage.zh-CN.md)** —— 每个命令的完整参考、所有 flag、所有 JSON shape
 - **[Developer.zh-CN.md](Developer.zh-CN.md)** —— 仓库结构、架构、构建、测试、新增工具的步骤、发布流程
+- **[CHANGELOG.md](CHANGELOG.md)** —— 版本历史
 - **[sdk/python/README.md](sdk/python/README.md)** —— Python SDK 快速上手
 - **[templates/README.md](templates/README.md)** —— 预制 OCI 模板和重构方法
 
