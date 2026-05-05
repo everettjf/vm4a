@@ -99,7 +99,8 @@ cp ./.build/release/vm4a /usr/local/bin/
 
 ## Where to go next
 
-- **[Usage.md](Usage.md)** — every command, agent loops, MCP/HTTP integration, sessions, pools, templates, troubleshooting
+- **[Cookbook.md](Cookbook.md)** — recipe-driven walkthroughs: end-to-end macOS guest workflow, end-to-end Linux guest workflow, agent loops, sessions, pools, MCP/HTTP setup
+- **[Usage.md](Usage.md)** — per-command reference, every flag, every JSON shape
 - **[Developer.md](Developer.md)** — repo layout, architecture, build, tests, how to add a new tool, release workflow
 - **[sdk/python/README.md](sdk/python/README.md)** — Python SDK quickstart
 - **[templates/README.md](templates/README.md)** — pre-baked OCI templates and how to rebuild them
