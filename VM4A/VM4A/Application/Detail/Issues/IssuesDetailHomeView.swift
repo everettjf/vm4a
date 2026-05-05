@@ -10,7 +10,7 @@ import SwiftUI
 #if arch(arm64)
 struct IssuesDetailHomeView: View {
     var body: some View {
-        VMWebView(url: URL(string:"https://github.com/everettjf/VM4A/issues")!)
+        VMWebView(url: URL(string:"https://github.com/everettjf/vm4a/issues")!)
             .navigationTitle("Issues - VM4A")
     }
 }

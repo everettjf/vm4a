@@ -27,8 +27,8 @@ brew tap everettjf/tap && brew install vm4a
 源码编译时**必须**用 entitlement 签名（否则 bridged 网络和 Rosetta 静默失败）：
 
 ```bash
-git clone https://github.com/everettjf/VM4A.git
-cd VM4A
+git clone https://github.com/everettjf/vm4a.git
+cd vm4a
 swift build -c release
 codesign --force --sign - \
     --entitlements Sources/VM4ACLI/VM4ACLI.entitlements \

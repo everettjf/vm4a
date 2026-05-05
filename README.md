@@ -6,7 +6,7 @@
 
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)](https://www.apple.com/macos)
-[![Latest release](https://img.shields.io/github/v/release/everettjf/VM4A?label=release)](https://github.com/everettjf/VM4A/releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/everettjf/vm4a?label=release)](https://github.com/everettjf/vm4a/releases/latest)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Chat-7289DA)](https://discord.gg/uxuy3vVtWs)
 
 ---
@@ -68,8 +68,8 @@ brew install --cask vm4a       # GUI (drag-install)
 Or build from source:
 
 ```bash
-git clone https://github.com/everettjf/VM4A.git
-cd VM4A
+git clone https://github.com/everettjf/vm4a.git
+cd vm4a
 swift build -c release
 codesign --force --sign - \
     --entitlements Sources/VM4ACLI/VM4ACLI.entitlements \
@@ -115,4 +115,4 @@ MIT. See [LICENSE](LICENSE).
 
 ## Star history
 
-[![Star History Chart](https://api.star-history.com/svg?repos=everettjf/VM4A&type=Date)](https://star-history.com/#everettjf/VM4A&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=everettjf/vm4a&type=Date)](https://star-history.com/#everettjf/vm4a&Date)

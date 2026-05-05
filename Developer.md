@@ -63,8 +63,8 @@ The CLI and the SwiftUI app **share `VM4ACore`**. A bundle created by the CLI ru
 ## Build from source
 
 ```bash
-git clone https://github.com/everettjf/VM4A.git
-cd VM4A
+git clone https://github.com/everettjf/vm4a.git
+cd vm4a
 swift build                                # debug
 swift build -c release                     # optimised
 swift test                                 # full unit suite

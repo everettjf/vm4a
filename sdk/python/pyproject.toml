@@ -20,8 +20,8 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/everettjf/VM4A"
-Issues = "https://github.com/everettjf/VM4A/issues"
+Homepage = "https://github.com/everettjf/vm4a"
+Issues = "https://github.com/everettjf/vm4a/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

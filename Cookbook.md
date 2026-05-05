@@ -27,8 +27,8 @@ brew tap everettjf/tap && brew install vm4a
 Building from source **must** be followed by codesigning with the entitlements file (otherwise bridged networking and Rosetta silently fail):
 
 ```bash
-git clone https://github.com/everettjf/VM4A.git
-cd VM4A
+git clone https://github.com/everettjf/vm4a.git
+cd vm4a
 swift build -c release
 codesign --force --sign - \
     --entitlements Sources/VM4ACLI/VM4ACLI.entitlements \
