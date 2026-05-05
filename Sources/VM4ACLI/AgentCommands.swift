@@ -88,6 +88,9 @@ struct SpawnCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
+    @Flag(name: .long, help: "Pretty-print JSON output")
+    var pretty: Bool = false
+
     @Option(name: .long, help: "Append a session event to <bundle>/.vm4a-sessions/<id>.jsonl")
     var session: String?
 
@@ -140,7 +143,7 @@ struct SpawnCommand: AsyncParsableCommand {
 
         switch output {
         case .json:
-            try writeJSONLine(outcome)
+            try writeJSONLine(outcome, pretty: pretty)
         case .text:
             print("Spawned \(outcome.name) at \(outcome.path) (id=\(outcome.id))")
             if let pid = outcome.pid { print("  pid: \(pid)") }
@@ -183,6 +186,9 @@ struct ExecCommand: ParsableCommand {
 
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
+
+    @Flag(name: .long, help: "Pretty-print JSON output")
+    var pretty: Bool = false
 
     @Option(name: .long, help: "Append a session event to <bundle>/.vm4a-sessions/<id>.jsonl")
     var session: String?
@@ -227,7 +233,7 @@ struct ExecCommand: ParsableCommand {
 
         switch output {
         case .json:
-            try writeJSONLine(result)
+            try writeJSONLine(result, pretty: pretty)
         case .text:
             FileHandle.standardOutput.write(Data(result.stdout.utf8))
             FileHandle.standardError.write(Data(result.stderr.utf8))
@@ -281,6 +287,9 @@ struct CpCommand: ParsableCommand {
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
+    @Flag(name: .long, help: "Pretty-print JSON output")
+    var pretty: Bool = false
+
     @Option(name: .long, help: "Append a session event to <bundle>/.vm4a-sessions/<id>.jsonl")
     var session: String?
 
@@ -324,7 +333,7 @@ struct CpCommand: ParsableCommand {
 
         switch output {
         case .json:
-            try writeJSONLine(result)
+            try writeJSONLine(result, pretty: pretty)
         case .text:
             if !result.stdout.isEmpty { FileHandle.standardOutput.write(Data(result.stdout.utf8)) }
             if !result.stderr.isEmpty { FileHandle.standardError.write(Data(result.stderr.utf8)) }
@@ -377,6 +386,9 @@ struct ForkCommand: ParsableCommand {
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
+    @Flag(name: .long, help: "Pretty-print JSON output")
+    var pretty: Bool = false
+
     @Option(name: .long, help: "Append a session event to <bundle>/.vm4a-sessions/<id>.jsonl")
     var session: String?
 
@@ -415,7 +427,7 @@ struct ForkCommand: ParsableCommand {
 
         switch output {
         case .json:
-            try writeJSONLine(outcome)
+            try writeJSONLine(outcome, pretty: pretty)
         case .text:
             print("Forked \(sourcePath) → \(outcome.path)")
             if outcome.started, let pid = outcome.pid { print("  started, pid \(pid)") }
@@ -454,6 +466,9 @@ struct ResetCommand: ParsableCommand {
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
+    @Flag(name: .long, help: "Pretty-print JSON output")
+    var pretty: Bool = false
+
     @Option(name: .long, help: "Append a session event to <bundle>/.vm4a-sessions/<id>.jsonl")
     var session: String?
 
@@ -485,7 +500,7 @@ struct ResetCommand: ParsableCommand {
 
         switch output {
         case .json:
-            try writeJSONLine(outcome)
+            try writeJSONLine(outcome, pretty: pretty)
         case .text:
             print("Reset \(outcome.path) from snapshot \(outcome.restored)")
             if let pid = outcome.pid { print("  pid: \(pid)") }

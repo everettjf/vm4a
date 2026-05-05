@@ -79,10 +79,13 @@ struct PoolShowCommand: ParsableCommand {
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
+    @Flag(name: .long, help: "Pretty-print JSON output")
+    var pretty: Bool = false
+
     mutating func run() throws {
         let pool = try PoolStore.load(name: name)
         switch output {
-        case .json: try writeJSONLine(pool)
+        case .json: try writeJSONLine(pool, pretty: pretty)
         case .text:
             print("name:     \(pool.name)")
             print("base:     \(pool.basePath)")
@@ -103,10 +106,13 @@ struct PoolListCommand: ParsableCommand {
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
+    @Flag(name: .long, help: "Pretty-print JSON output")
+    var pretty: Bool = false
+
     mutating func run() throws {
         let pools = try PoolStore.list()
         switch output {
-        case .json: try writeJSONLine(pools)
+        case .json: try writeJSONLine(pools, pretty: pretty)
         case .text:
             if pools.isEmpty {
                 print("No pool definitions. Create one with: vm4a pool create <name> --base ...")
@@ -227,6 +233,9 @@ struct PoolAcquireCommand: ParsableCommand {
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
+    @Flag(name: .long, help: "Pretty-print JSON output")
+    var pretty: Bool = false
+
     mutating func run() throws {
         let pool = try PoolStore.load(name: name)
         let (warm, _) = pool.discover()
@@ -245,7 +254,7 @@ struct PoolAcquireCommand: ParsableCommand {
         }
         let outcome = Outcome(path: dst.path(), name: dst.lastPathComponent, label: leaseLabel)
         switch output {
-        case .json: try writeJSONLine(outcome)
+        case .json: try writeJSONLine(outcome, pretty: pretty)
         case .text:
             print("Acquired \(outcome.path)")
         }
@@ -318,6 +327,9 @@ struct PoolSpawnCommand: ParsableCommand {
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
+    @Flag(name: .long, help: "Pretty-print JSON output")
+    var pretty: Bool = false
+
     mutating func run() throws {
         let pool = try PoolStore.load(name: name)
         let storageURL = URL(fileURLWithPath: pool.storage, isDirectory: true)
@@ -339,7 +351,7 @@ struct PoolSpawnCommand: ParsableCommand {
         ), executable: executable)
 
         switch output {
-        case .json: try writeJSONLine(outcome)
+        case .json: try writeJSONLine(outcome, pretty: pretty)
         case .text:
             print("Pool '\(name)' minted: \(outcome.path)")
             if let pid = outcome.pid { print("  pid: \(pid)") }

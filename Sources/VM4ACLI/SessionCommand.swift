@@ -29,11 +29,14 @@ struct SessionListCommand: ParsableCommand {
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
+    @Flag(name: .long, help: "Pretty-print JSON output")
+    var pretty: Bool = false
+
     mutating func run() throws {
         let rows = SessionStore.discoverSessions(bundlePath: bundle)
         switch output {
         case .json:
-            try writeJSONLine(rows)
+            try writeJSONLine(rows, pretty: pretty)
         case .text:
             if rows.isEmpty {
                 print("No sessions found.")
@@ -61,11 +64,14 @@ struct SessionShowCommand: ParsableCommand {
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
+    @Flag(name: .long, help: "Pretty-print JSON output")
+    var pretty: Bool = false
+
     mutating func run() throws {
         let events = try SessionStore.read(id: id, bundlePath: bundle)
         switch output {
         case .json:
-            try writeJSONLine(events)
+            try writeJSONLine(events, pretty: pretty)
         case .text:
             if events.isEmpty {
                 print("Session '\(id)' has no events.")

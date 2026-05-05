@@ -16,9 +16,11 @@ enum OutputFormat: String, ExpressibleByArgument {
     case json
 }
 
-func writeJSONLine<T: Encodable>(_ value: T) throws {
+func writeJSONLine<T: Encodable>(_ value: T, pretty: Bool = false) throws {
     let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
+    var formatting: JSONEncoder.OutputFormatting = [.sortedKeys]
+    if pretty { formatting.insert(.prettyPrinted) }
+    encoder.outputFormatting = formatting
     let data = try encoder.encode(value)
     FileHandle.standardOutput.write(data)
     FileHandle.standardOutput.write(Data("\n".utf8))
@@ -109,6 +111,9 @@ struct CreateCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
+    @Flag(name: .long, help: "Pretty-print JSON output")
+    var pretty: Bool = false
+
     mutating func run() async throws {
         let storageURL = URL(fileURLWithPath: storage, isDirectory: true)
         let memoryBytes = try memoryGB.map { try bytesFromGB($0, fieldName: "memory-gb") }
@@ -149,7 +154,7 @@ struct CreateCommand: AsyncParsableCommand {
 
         switch output {
         case .json:
-            try writeJSONLine(outcome)
+            try writeJSONLine(outcome, pretty: pretty)
         case .text:
             if os == .macOS, image == nil {
                 print("Created macOS bundle skeleton at \(outcome.path).")
@@ -175,13 +180,16 @@ struct ListCommand: ParsableCommand {
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
+    @Flag(name: .long, help: "Pretty-print JSON output")
+    var pretty: Bool = false
+
     mutating func run() throws {
         let storageURL = URL(fileURLWithPath: storage, isDirectory: true)
         let rows = listVMSummaries(in: storageURL)
 
         switch output {
         case .json:
-            try writeJSONLine(rows)
+            try writeJSONLine(rows, pretty: pretty)
         case .text:
             if rows.isEmpty {
                 print("No VM bundles found in \(storageURL.path())")
@@ -520,6 +528,9 @@ struct IPCommand: ParsableCommand {
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
+    @Flag(name: .long, help: "Pretty-print JSON output")
+    var pretty: Bool = false
+
     struct Row: Encodable {
         let ip: String
         let mac: String
@@ -533,7 +544,7 @@ struct IPCommand: ParsableCommand {
         let rows = leases.map { Row(ip: $0.ipAddress, mac: $0.hardwareAddress, name: $0.name) }
         switch output {
         case .json:
-            try writeJSONLine(rows)
+            try writeJSONLine(rows, pretty: pretty)
         case .text:
             if rows.isEmpty {
                 FileHandle.standardError.write(Data("No DHCP lease found for \(model.config.name). VM may not be running or may use bridged networking (try arp -an).\n".utf8))
@@ -607,6 +618,9 @@ struct AgentStatusCommand: ParsableCommand {
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
+    @Flag(name: .long, help: "Pretty-print JSON output")
+    var pretty: Bool = false
+
     mutating func run() throws {
         let rootURL = URL(fileURLWithPath: vmPath, isDirectory: true)
         _ = try loadModel(rootPath: rootURL)
@@ -615,7 +629,7 @@ struct AgentStatusCommand: ParsableCommand {
             throw ExitCode(4)
         }
         switch output {
-        case .json: try writeJSONLine(beat)
+        case .json: try writeJSONLine(beat, pretty: pretty)
         case .text:
             print("host:      \(beat.hostname)")
             print("version:   \(beat.version)")
