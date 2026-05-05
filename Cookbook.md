@@ -8,6 +8,7 @@ Recipe-driven guide organised by *what you want to do*. `Usage.md` is the per-co
 
 - [Install](#install)
 - [Command index](#command-index)
+- [macOS vs Linux — capability differences](#macos-vs-linux--capability-differences)
 - [macOS guest workflow](#macos-guest-workflow)
 - [Linux guest workflow](#linux-guest-workflow)
 - [Cross-cutting features (macOS / Linux)](#cross-cutting-features-macos--linux)
@@ -79,6 +80,77 @@ Images / network
 ```
 
 Every command supports `--output text|json`. `vm4a <cmd> --help` is the canonical reference.
+
+---
+
+## macOS vs Linux — capability differences
+
+The CLI surface (`spawn` / `exec` / `cp` / `fork` / `reset` / `pool` / `session` / `push` / `pull` / `mcp` / `serve`) is identical on both OSes — that's by design. But **the underlying implementation and first-time costs really do differ**. Read this once before picking which to use.
+
+### First-time create / install
+
+| Aspect | Linux | macOS |
+|---|---|---|
+| Image type | ISO (~1–3 GB) | IPSW (~12–15 GB) |
+| Catalog entries | 4 fixed distros (Ubuntu / Fedora / Debian / Alpine) | 1 sentinel `macos-latest` (resolved at fetch time via Apple) |
+| `--image` if omitted | **Required** | **Optional** — auto-fetches `macos-latest` |
+| Install mechanism | ISO attached as USB; guest runs its own installer | `vm4a` drives `VZMacOSInstaller` end-to-end |
+| Install duration | minutes (autoinstall) to ~10 min | 10–20 min |
+| **First boot** | **Fully headless** (cloud-init / autoinstall / preseed finishes everything) | **One manual step** — Setup Assistant must be clicked through |
+| SSH bootstrap | distro images come with sshd on, or autoinstall enables it | **Manually** enable Remote Login (System Settings → General → Sharing) |
+| Total bring-up cost | minutes, zero human input | 20–30 min, plus one human click-through |
+
+### Runtime flags
+
+| Aspect | Linux | macOS |
+|---|---|---|
+| `--rosetta` | ✅ Supported (virtiofs share + binfmt_misc) | ❌ Not applicable (macOS guest is already native ARM) |
+| `--recovery` (run/spawn) | ❌ Not applicable (VZ EFI has no recovery) | ✅ Supported (`VZMacOSBootLoader.startUpFromMacOSRecoveryMode`) |
+| Minimum memory | distro-dependent, often a few hundred MB | IPSW-dictated, typically ≥ 4 GB (Sequoia ≥ 8 GB) |
+| Minimum disk | 5–10 GB suffices for most distros | IPSW-dictated, typically ≥ 60 GB |
+| Default SSH user | `root` | Current host username (NSUserName) |
+
+### Bundle file layout
+
+| File | Linux | macOS |
+|---|---|---|
+| `config.json` / `state.json` / `Disk.img` | ✅ | ✅ |
+| `MachineIdentifier` (VZ platform identity) | ✅ Generic | ✅ Mac |
+| `NVRAM` (EFI variables) | ✅ | ❌ |
+| `HardwareModel` (VZ hardware identity) | ❌ | ✅ |
+| `AuxiliaryStorage` (OS boot data) | ❌ | ✅ |
+
+### Identical features (zero difference)
+
+The following commands behave **exactly the same** on Linux and macOS, provided your base bundle is ready (macOS = post-Setup-Assistant, Remote Login enabled):
+
+- `vm4a run` / `stop` / `list` / `clone`
+- `vm4a fork` / `reset` (including `--auto-start`, `--from-snapshot`, `--wait-ssh`)
+- `vm4a exec` / `cp` / `ssh` / `ip`
+- `vm4a push` / `pull` (OCI bundle format is OS-agnostic)
+- All of `vm4a session`
+- All of `vm4a pool` (`create/show/list/serve/spawn/acquire/release/destroy`)
+- Network modes `--network none|nat|bridged|host`
+- Snapshots `--save-on-stop` / `--restore` (host needs macOS 14+ in both cases)
+- MCP server (`vm4a mcp`) — `os` is an optional spawn-tool input
+- HTTP REST API (`vm4a serve`) — `os` is an optional `/v1/spawn` body field
+- Python SDK — `client.spawn(os_="macOS")` or `os_="linux"`
+- Sessions JSONL format
+- Image cache (`~/.cache/vm4a/images/`)
+
+### Templates (official)
+
+| Template | OS | Rebuild path |
+|---|---|---|
+| `ubuntu-base` | Linux | CI rebuilds monthly, fully unattended |
+| `python-dev` | Linux | CI rebuilds monthly, fully unattended |
+| `xcode-dev` | macOS | Manual Setup Assistant once; `build.sh` automates the rest |
+
+Downstream usage of templates is identical: `vm4a spawn dev --from <ref> --wait-ssh` — Setup Assistant was already done at template-build time, so the pull is plug-and-play.
+
+### One-line takeaway
+
+**Linux is fully automated; macOS needs one manual Setup Assistant click-through per fresh IPSW; from then on, all agent operations behave identically across both OSes.** Think of Setup Assistant as the "someone has to build the image once" step before `docker pull` — a one-time cost, not a recurring one.
 
 ---
 

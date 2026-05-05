@@ -8,6 +8,7 @@
 
 - [安装](#安装)
 - [命令总览](#命令总览)
+- [macOS vs Linux —— 支持差异](#macos-vs-linux--支持差异)
 - [macOS guest 工作流](#macos-guest-工作流)
 - [Linux guest 工作流](#linux-guest-工作流)
 - [通用功能（macOS / Linux 都适用）](#通用功能macos--linux-都适用)
@@ -79,6 +80,79 @@ Sessions + 池（v2.3, v2.4）
 ```
 
 每个命令都支持 `--output text|json`。`vm4a <cmd> --help` 是权威参考。
+
+---
+
+## macOS vs Linux —— 支持差异
+
+CLI 的命令名（`spawn` / `exec` / `cp` / `fork` / `reset` / `pool` / `session` / `push` / `pull` / `mcp` / `serve`）在两个 OS 上完全一致 —— 这是设计目标。但**底下的实现和首次成本有真实差异**。先看清楚再用。
+
+### 首次创建 / 安装
+
+| 维度 | Linux | macOS |
+|---|---|---|
+| 镜像类型 | ISO（约 1–3 GB） | IPSW（约 12–15 GB） |
+| catalog 条目 | 4 个固定 distro（Ubuntu / Fedora / Debian / Alpine） | 1 个 `macos-latest`（运行时查 Apple） |
+| `--image` 缺省 | **必填** | **可省** —— 自动用 `macos-latest` |
+| 安装方式 | ISO 当 USB 挂上，guest 自己跑安装器 | `vm4a` 调 `VZMacOSInstaller` 完整安装 |
+| 安装时长 | 几分钟（autoinstall）到 10+ 分钟 | 10–20 分钟 |
+| **首次启动** | **全 headless**（cloud-init / autoinstall / preseed 跑完） | **必须手动**点一次 Setup Assistant |
+| SSH 引导 | distro 镜像默认开，或 autoinstall 自动开 | **必须手动**开 Remote Login（系统设置 → 通用 → 共享） |
+| 安装阶段总成本 | 几分钟，0 人工 | 20–30 分钟，需要 1 次人工点击 |
+
+### 运行参数
+
+| 维度 | Linux | macOS |
+|---|---|---|
+| `--rosetta` | ✅ 支持（virtiofs 共享 + binfmt_misc） | ❌ 不适用（macOS guest 已经是 ARM 原生） |
+| `--recovery`（run/spawn） | ❌ 不适用（VZ EFI 没有 recovery 模式） | ✅ 支持（`VZMacOSBootLoader.startUpFromMacOSRecoveryMode`） |
+| 内存最小值 | distro 决定，几百 MB 起步 | IPSW 决定，通常 ≥ 4 GB（Sequoia 起 ≥ 8 GB） |
+| 磁盘最小值 | 5–10 GB 够大多数 distro | IPSW 决定，通常 ≥ 60 GB |
+| 默认 SSH 用户 | `root` | 当前 host 用户名（NSUserName） |
+
+### 平台文件
+
+bundle 内文件结构因 OS 而异：
+
+| 文件 | Linux | macOS |
+|---|---|---|
+| `config.json` / `state.json` / `Disk.img` | ✅ | ✅ |
+| `MachineIdentifier`（VZ 平台标识） | ✅ Generic | ✅ Mac |
+| `NVRAM`（EFI 变量） | ✅ | ❌ |
+| `HardwareModel`（VZ 硬件标识） | ❌ | ✅ |
+| `AuxiliaryStorage`（OS 启动数据） | ❌ | ✅ |
+
+### 完全一致的功能（two OSes，零差异）
+
+下面这些命令在 Linux 和 macOS 上**行为一模一样**，只要 base bundle 已经准备好（macOS 已过 Setup Assistant、已开 Remote Login）：
+
+- `vm4a run` / `stop` / `list` / `clone`
+- `vm4a fork` / `reset`（包括 `--auto-start`、`--from-snapshot`、`--wait-ssh`）
+- `vm4a exec` / `cp` / `ssh` / `ip`
+- `vm4a push` / `pull`（OCI bundle 格式两个 OS 共享）
+- `vm4a session` 全套
+- `vm4a pool create/show/list/serve/spawn/acquire/release/destroy`
+- 网络模式 `--network none|nat|bridged|host`
+- 快照 `--save-on-stop` / `--restore`（host macOS 14+ 都支持）
+- MCP server（`vm4a mcp`）—— `os` 字段在 spawn tool 里可选
+- HTTP REST API（`vm4a serve`）—— `os` 字段在 `/v1/spawn` body 里可选
+- Python SDK —— `client.spawn(os_="macOS")` 或 `os_="linux"`
+- Sessions JSONL 格式
+- Image 缓存（`~/.cache/vm4a/images/`）
+
+### 模板（官方）
+
+| 模板 | OS | 重建方式 |
+|---|---|---|
+| `ubuntu-base` | Linux | CI 月度全自动 rebuild |
+| `python-dev` | Linux | CI 月度全自动 rebuild |
+| `xcode-dev` | macOS | 手动 Setup Assistant 一次后，`build.sh` 自动跑剩下的 |
+
+下游用户**拉模板**完全一致：`vm4a spawn dev --from <ref> --wait-ssh` —— Setup Assistant 已经在制作模板时过了，pull 下来直接可用。
+
+### 一句话总结
+
+**Linux 全自动；macOS 在创建一台新 base 时需要 1 次人工点击 Setup Assistant；之后所有 agent 操作两个 OS 完全一致。** 把 Setup Assistant 看成 Docker 里 `docker pull` 之前要先有人构建一次镜像 —— 一次性成本，之后全自动。
 
 ---
 
