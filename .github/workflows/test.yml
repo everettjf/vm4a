@@ -9,18 +9,23 @@ on:
 
 jobs:
   swift-test:
-    # macos-14 hosted runners include the Swift toolchain. They don't have
-    # Apple Virtualization.framework runtime privileges (no actual VM start),
-    # but the unit tests don't require booting a VM — they exercise types,
-    # JSON encoding, the OCI parser, the HTTP/MCP wire format, sessions,
-    # pools, and SSH/SCP helpers via /usr/bin/{true,sleep}.
-    runs-on: macos-14
+    # macos-15 ships with Xcode 16 / Swift 6, which Package.swift requires
+    # (`swift-tools-version: 6.0`). The hosted runner doesn't have
+    # Virtualization.framework runtime privileges, but our unit tests don't
+    # boot real VMs — they exercise types, JSON, OCI/MCP/HTTP wire formats,
+    # sessions, pools, and SSH/SCP helpers via /usr/bin/{true,sleep}.
+    runs-on: macos-15
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
-      - name: Swift version
-        run: swift --version
+      - name: Select Xcode 16 (Swift 6)
+        run: |
+          # macos-15 default is already Xcode 16, but be explicit so the
+          # workflow doesn't silently regress if GitHub changes the default.
+          sudo xcode-select -s /Applications/Xcode_16.app || sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
+          swift --version
 
       - name: Build
         run: swift build -c debug
