@@ -1,13 +1,20 @@
+<div align="center">
+
 # VM4A — 给 AI Agent 用的虚拟机
 
-**在 Apple Silicon 上为 AI Agent 跑代码提供一次性、可隔离的 macOS / Linux 虚拟机。** 基于 Apple [Virtualization framework](https://developer.apple.com/documentation/virtualization)，按 2026 年 AI Agent 的真实工作方式打包。
+**在 Apple Silicon 上为 AI Agent 跑代码提供一次性、可隔离的 macOS / Linux 虚拟机。**
 
-> English: [README.md](README.md)
+基于 Apple [Virtualization framework](https://developer.apple.com/documentation/virtualization)，按 2026 年 AI Agent 的真实工作方式打包。
 
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)](https://www.apple.com/macos)
+[![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey)](https://www.apple.com/macos)
+[![Apple Silicon](https://img.shields.io/badge/arch-Apple%20Silicon-black?logo=apple)](https://www.apple.com/mac/)
 [![Latest release](https://img.shields.io/github/v/release/everettjf/vm4a?label=release)](https://github.com/everettjf/vm4a/releases/latest)
-[![Discord](https://img.shields.io/badge/Discord-Join%20Chat-7289DA)](https://discord.gg/uxuy3vVtWs)
+[![Discord](https://img.shields.io/badge/Discord-Join%20Chat-7289DA?logo=discord&logoColor=white)](https://discord.gg/uxuy3vVtWs)
+
+[**为什么**](#为什么要做-vm4a) · [**30 秒上手**](#30-秒看一遍) · [**安装**](#安装) · [**Cookbook**](Cookbook.zh-CN.md) · [**Usage**](Usage.zh-CN.md) · [**Developer**](Developer.zh-CN.md) · [English](README.md)
+
+</div>
 
 ---
 
@@ -15,13 +22,15 @@
 
 写代码的 Agent —— Claude Code、Cursor、OpenAI Codex、自己写的循环 —— 反复需要一个东西：**一台干净、隔离、坏了能重置的机器**。VM4A 是本地的、跑在你 Mac 上的、并且是这条赛道里**唯一**同时满足下面这些条件的工具：
 
-- 🖥 **同时支持 macOS 和 Linux guest** —— 跑 iOS/macOS app 编译，不只是 `pip install`
-- 📸 **VZ 快照（macOS 14+）** —— `--save-on-stop` / `--restore`，失败 → 重置 → 重试只要 1 秒级
-- 📦 **OCI registry push/pull** —— 像分发容器镜像那样分发 Agent 环境
-- 🚀 **Apple Silicon 原生** —— `Virtualization.framework`，接近裸机性能，不走 QEMU
-- 🪟 **GUI 是调试器，不是主界面** —— Agent 跑挂的时候，打开 App 看那一刻的快照
+| | |
+|---|---|
+| 🖥 **同时支持 macOS 和 Linux guest** | 跑 iOS/macOS app 编译，不只是 `pip install` |
+| 📸 **VZ 快照** *(macOS 14+)* | `--save-on-stop` / `--restore`，失败 → 重置 → 重试只要 1 秒级 |
+| 📦 **OCI registry push/pull** | 像分发容器镜像那样分发 Agent 环境 |
+| 🚀 **Apple Silicon 原生** | `Virtualization.framework`，接近裸机性能，不走 QEMU |
+| 🪟 **GUI 是调试器，不是主界面** | Agent 跑挂的时候，打开 App 看那一刻的快照 |
 
-> **macOS guest 安装流程。** `vm4a create --os macOS --image foo.ipsw` 直接用 Apple 的 `VZMacOSInstaller` 走完整安装流程（10–20 分钟）。装好的 VM 首次启动时会进 Setup Assistant，需要交互完成一次（建账号 + 打开 Remote Login），之后所有 vm4a 操作 —— `run`、`exec`、`cp`、`fork`、`reset`、`pool`、OCI push/pull、MCP 工具 —— 在 macOS bundle 上和 Linux 一样能用。从 registry 拉一个预制好的 macOS bundle 完全跳过 Setup Assistant。**Host 要求：Apple Silicon Mac，macOS 13+。**
+> **macOS guest 安装流程。** `vm4a create --os macOS --image foo.ipsw` 直接用 Apple 的 `VZMacOSInstaller` 走完整安装流程（10–20 分钟）。装好的 VM 首次启动时会进 Setup Assistant，需要交互完成一次（建账号 + 打开 Remote Login），之后所有 vm4a 操作 —— `run`、`exec`、`cp`、`fork`、`reset`、`pool`、OCI push/pull、MCP 工具 —— 在 macOS bundle 上和 Linux 一样能用。从 registry 拉一个预制好的 macOS bundle 完全跳过 Setup Assistant。
 
 VM4A 念作 **"VM for Agent"**，CLI 二进制叫 `vm4a`。
 
@@ -30,17 +39,26 @@ VM4A 念作 **"VM for Agent"**，CLI 二进制叫 `vm4a`。
 ## 30 秒看一遍
 
 ```bash
-# 拉一个预制好的 Python 开发镜像，启动，等 SSH 就绪，跑代码
+# 1. 拉一个预制好的 Python 开发镜像，启动，等 SSH 就绪
 vm4a spawn dev \
     --from ghcr.io/everettjf/vm4a-templates/python-dev:latest \
     --storage /tmp/vm4a --wait-ssh
 
+# 2. 在 guest 里跑代码，JSON 输出方便程序消费
 vm4a exec /tmp/vm4a/dev --output json -- python3 -c 'print(1+1)'
 # → {"exit_code":0,"stdout":"2\n","stderr":"","duration_ms":312,"timed_out":false}
 
-# 每个任务模式：APFS 克隆 1 秒一个，跑完丢
+# 3. 每个任务一台 VM 的模式：APFS 克隆 1 秒一个，跑完丢
 vm4a fork /tmp/vm4a/dev /tmp/vm4a/task-42 --auto-start --wait-ssh
 vm4a exec /tmp/vm4a/task-42 -- bash /work/agent_step.sh
+```
+
+```
+    golden bundle          per-task fork          per-task fork
+   ┌───────────┐  fork →   ┌───────────┐          ┌───────────┐
+   │   /dev    │  ──────►  │ /task-42  │          │ /task-43  │  ...
+   └───────────┘           └───────────┘          └───────────┘
+   只拉一次                 APFS clonefile，~1s     执行完即丢
 ```
 
 ---
@@ -49,9 +67,9 @@ vm4a exec /tmp/vm4a/task-42 -- bash /work/agent_step.sh
 
 | 接入方式 | 适合场景 | 入口 |
 |---|---|---|
-| **CLI** | shell 脚本、CI、手动调试 | `vm4a <command>` |
-| **MCP** | Claude Code / Cursor / Cline 等支持 MCP 的 AI | `vm4a mcp`（stdio JSON-RPC） |
-| **HTTP + Python SDK** | 自定义 Python harness、其他语言绑定 | `vm4a serve` + `pip install vm4a` |
+| 🐚 **CLI** | shell 脚本、CI、手动调试 | `vm4a <command>` |
+| 🤖 **MCP** | Claude Code / Cursor / Cline 等支持 MCP 的 AI | `vm4a mcp`（stdio JSON-RPC） |
+| 🌐 **HTTP + Python SDK** | 自定义 Python harness、其他语言绑定 | `vm4a serve` + `pip install vm4a` |
 
 三种接入背后都是同一组 agent 原语：`spawn`、`exec`、`cp`、`fork`、`reset`、`list`、`ip`、`stop`。哪种用着顺手就用哪种。
 
@@ -65,7 +83,8 @@ brew install vm4a              # CLI
 brew install --cask vm4a       # GUI（拖拽安装）
 ```
 
-或源码编译：
+<details>
+<summary>源码编译</summary>
 
 ```bash
 git clone https://github.com/everettjf/vm4a.git
@@ -79,11 +98,21 @@ cp ./.build/release/vm4a /usr/local/bin/
 
 > ⚠️ CLI **必须**用 `Sources/VM4ACLI/VM4ACLI.entitlements` 签名。bridged 网络和 Rosetta 路径在没签名时会静默失败。
 
-**要求：** Apple Silicon Mac（M1+），macOS 13+，快照功能要 macOS 14+。
+</details>
+
+**要求：** Apple Silicon Mac（M1+），macOS 13+（快照功能要 macOS 14+）。
 
 ---
 
-## 当前状态 — v2.4（warm-pool 运行时 + 网络沙盒已发布）
+## 当前进度
+
+**最新 — v2.4** · warm-pool 运行时 + 网络沙盒
+
+- `vm4a pool serve / acquire / release` —— 预热 N 台空闲 VM，毫秒级派发。
+- `--network none | nat | bridged | host` —— 每台 VM 独立指定隔离级别。
+
+<details>
+<summary>完整发布历史</summary>
 
 | 阶段 | 目标 | 状态 |
 |---|---|---|
@@ -91,23 +120,29 @@ cp ./.build/release/vm4a /usr/local/bin/
 | v2.0 P0 | Agent CLI 原语（`spawn`/`exec`/`cp`/`fork`/`reset`） | ✅ 已发布 |
 | v2.0 P1 | MCP server（`vm4a mcp`），Claude Code / Cursor / Cline 接入 | ✅ 已发布 |
 | v2.1 | HTTP API（`vm4a serve`）+ Python SDK | ✅ 已发布 |
-| v2.2 | 官方 OCI 模板（`ubuntu-base`/`python-dev`/`xcode-dev`） | ✅ 已发布（Linux 模板全自动；macOS 模板需要一次手动 Setup Assistant） |
-| v2.3 | Time Machine 视图（`vm4a-sessions` SwiftUI app + `vm4a session` CLI） | ✅ 已发布（独立 app；主 app 集成待做） |
-| v2.4 | 预热池运行时（`vm4a pool serve/acquire/release`）、`--network none\|nat\|bridged\|host` | ✅ 已发布（CPU/内存/磁盘大小之外的资源 cap + ISO 只读 是 VZ 限制下能做到的全部） |
+| v2.2 | 官方 OCI 模板（`ubuntu-base`/`python-dev`/`xcode-dev`） | ✅ 已发布 *(macOS 模板需要一次手动 Setup Assistant)* |
+| v2.3 | Time Machine 视图（`vm4a-sessions` SwiftUI app + `vm4a session` CLI） | ✅ 已发布 *(独立 app；主 app 集成待做)* |
+| v2.4 | 预热池运行时 + `--network` 沙盒 | ✅ 已发布 |
+
+每个版本的具体变更见 [CHANGELOG.md](CHANGELOG.md)。
+
+</details>
 
 ---
 
 ## 进一步阅读
 
-- **[Cookbook.zh-CN.md](Cookbook.zh-CN.md)** —— 实战手册：macOS / Linux guest 端到端工作流、Agent loop、sessions、pools、MCP/HTTP 接入
-- **[UseCases/](UseCases/)** —— 完整场景方案（比如 golden image + 每日刷新 + 并行 fork）
-- **[Usage.zh-CN.md](Usage.zh-CN.md)** —— 每个命令的完整参考、所有 flag、所有 JSON shape
-- **[Developer.zh-CN.md](Developer.zh-CN.md)** —— 仓库结构、架构、构建、测试、新增工具的步骤、发布流程
-- **[CHANGELOG.md](CHANGELOG.md)** —— 版本历史
-- **[sdk/python/README.md](sdk/python/README.md)** —— Python SDK 快速上手
-- **[templates/README.md](templates/README.md)** —— 预制 OCI 模板和重构方法
+| 你想做的事 | 看这里 |
+|---|---|
+| 上手实战、端到端 recipe | [**Cookbook.zh-CN.md**](Cookbook.zh-CN.md) —— macOS / Linux guest、Agent loop、sessions、pools、MCP/HTTP 接入 |
+| 完整场景方案（golden image + 并行 fork 等） | [**UseCases/**](UseCases/) |
+| 查 flag 或 JSON 字段 | [**Usage.zh-CN.md**](Usage.zh-CN.md) —— 每个命令的完整参考 |
+| 自己改 VM4A | [**Developer.zh-CN.md**](Developer.zh-CN.md) —— 仓库结构、架构、构建、测试、发布流程 |
+| 看版本变更 | [**CHANGELOG.md**](CHANGELOG.md) |
+| 用 Python SDK | [**sdk/python/README.md**](sdk/python/README.md) |
+| 拉 / 重建模板镜像 | [**templates/README.md**](templates/README.md) |
 
-如果你在用 Claude Code，仓库里自带一个 skill：`.claude/skills/vm4a-cli/SKILL.md`，会教 Claude 怎么使用每个子命令。
+> 在用 **Claude Code**？仓库里自带一个 skill：`.claude/skills/vm4a-cli/SKILL.md`，会教 Claude 怎么使用每个子命令。
 
 ---
 
