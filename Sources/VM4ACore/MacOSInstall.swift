@@ -44,11 +44,10 @@ public func runMacOSInstall(
     try writeMacOSPlatformFiles(model: model, requirements: requirements)
 
     progress?(.init(stage: .installing, message: "Running VZMacOSInstaller", fraction: 0))
-    let configuration = try createConfiguration(model: model)
-    try configuration.validate()
+    let configBox = try _SendableBox(buildConfiguration(model: model))
 
     try await runInstallation(
-        configuration: configuration,
+        configBox: configBox,
         ipswURL: ipswPath,
         progress: progress
     )
@@ -56,15 +55,21 @@ public func runMacOSInstall(
     progress?(.init(stage: .finalising, message: "Install complete", fraction: 1.0))
 }
 
+private final class _SendableBox<T>: @unchecked Sendable {
+    let value: T
+    init(_ value: T) { self.value = value }
+}
+
 private func loadRestoreImage(ipswURL: URL) async throws -> VZMacOSRestoreImage {
-    try await withCheckedThrowingContinuation { continuation in
+    let box: _SendableBox<VZMacOSRestoreImage> = try await withCheckedThrowingContinuation { continuation in
         VZMacOSRestoreImage.load(from: ipswURL) { result in
             switch result {
             case .failure(let err): continuation.resume(throwing: err)
-            case .success(let image): continuation.resume(returning: image)
+            case .success(let image): continuation.resume(returning: _SendableBox(image))
             }
         }
     }
+    return box.value
 }
 
 private func resolveConfigurationRequirements(restoreImage: VZMacOSRestoreImage) throws -> VZMacOSConfigurationRequirements {
@@ -113,15 +118,21 @@ private final class InstallationBox: @unchecked Sendable {
     var virtualMachine: VZVirtualMachine?
 }
 
+private func buildConfiguration(model: VMModel) throws -> VZVirtualMachineConfiguration {
+    let configuration = try createConfiguration(model: model)
+    try configuration.validate()
+    return configuration
+}
+
 private func runInstallation(
-    configuration: VZVirtualMachineConfiguration,
+    configBox: _SendableBox<VZVirtualMachineConfiguration>,
     ipswURL: URL,
     progress: (@Sendable (MacOSInstallProgress) -> Void)?
 ) async throws {
     let box = InstallationBox()
     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
         DispatchQueue.main.async {
-            let vm = VZVirtualMachine(configuration: configuration)
+            let vm = VZVirtualMachine(configuration: configBox.value)
             box.virtualMachine = vm
             let installer = VZMacOSInstaller(virtualMachine: vm, restoringFromImageAt: ipswURL)
 

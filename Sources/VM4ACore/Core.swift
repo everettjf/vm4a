@@ -879,18 +879,21 @@ public func runVM(model: VMModel, options: RunOptions) throws {
     signal(SIGTERM, SIG_IGN)
     let sigintSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: vmQueue)
     let sigtermSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: vmQueue)
+    // VZVirtualMachine isn't Sendable, but we drive it from vmQueue only.
+    // Wrap it so the @Sendable signal handler can capture it without warnings.
+    let vmBox = _VMBox(virtualMachine)
     let requestStop: @Sendable () -> Void = {
         if let saveURL = options.saveStateOnStopAt, #available(macOS 14.0, *) {
-            virtualMachine.pause { _ in
-                virtualMachine.saveMachineStateTo(url: saveURL) { saveError in
+            vmBox.vm.pause { _ in
+                vmBox.vm.saveMachineStateTo(url: saveURL) { saveError in
                     if let saveError {
                         stopBox.setError(saveError)
                     }
-                    virtualMachine.stop { _ in }
+                    vmBox.vm.stop { _ in }
                 }
             }
         } else {
-            virtualMachine.stop { _ in }
+            vmBox.vm.stop { _ in }
         }
     }
     sigintSource.setEventHandler(handler: requestStop)
@@ -917,20 +920,29 @@ final class _StopBox: @unchecked Sendable {
     }
 }
 
+/// Sendable wrapper for the non-Sendable VZVirtualMachine. Safe because
+/// every call site funnels VZ work through `vmQueue` (a serial dispatch
+/// queue) — the box is just there to satisfy `@Sendable` capture rules.
+final class _VMBox: @unchecked Sendable {
+    let vm: VZVirtualMachine
+    init(_ vm: VZVirtualMachine) { self.vm = vm }
+}
+
 private func vmQueueStart(virtualMachine: VZVirtualMachine, queue: DispatchQueue, options: RunOptions, osType: VMOSType) throws {
     let start = DispatchSemaphore(value: 0)
     let errBox = _StopBox()
+    let vmBox = _VMBox(virtualMachine)
 
     queue.async {
         if let restoreURL = options.restoreStateAt {
             if #available(macOS 14.0, *) {
-                virtualMachine.restoreMachineStateFrom(url: restoreURL) { restoreError in
+                vmBox.vm.restoreMachineStateFrom(url: restoreURL) { restoreError in
                     if let restoreError {
                         errBox.setError(restoreError)
                         start.signal()
                         return
                     }
-                    virtualMachine.resume { result in
+                    vmBox.vm.resume { result in
                         if case let .failure(error) = result { errBox.setError(error) }
                         start.signal()
                     }
@@ -945,12 +957,12 @@ private func vmQueueStart(virtualMachine: VZVirtualMachine, queue: DispatchQueue
         if options.recoveryMode && osType == .macOS {
             let startOpts = VZMacOSVirtualMachineStartOptions()
             startOpts.startUpFromMacOSRecovery = true
-            virtualMachine.start(options: startOpts) { error in
+            vmBox.vm.start(options: startOpts) { error in
                 if let error { errBox.setError(error) }
                 start.signal()
             }
         } else {
-            virtualMachine.start { result in
+            vmBox.vm.start { result in
                 if case let .failure(error) = result { errBox.setError(error) }
                 start.signal()
             }

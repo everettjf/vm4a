@@ -27,7 +27,8 @@ let package = Package(
                 "VM4ACore",
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ],
-            path: "Sources/VM4ACLI"
+            path: "Sources/VM4ACLI",
+            exclude: ["VM4ACLI.entitlements"]
         ),
         .executableTarget(
             name: "vm4a-guest",
