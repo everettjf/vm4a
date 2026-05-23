@@ -14,6 +14,8 @@ struct ServeCommand: AsyncParsableCommand {
               POST /v1/cp         body: {vm_path, source, destination, ...}
               POST /v1/fork       body: {source_path, destination_path, ...}
               POST /v1/reset      body: {vm_path, from, ...}
+              POST /v1/run_code   body: {vm_path, language, code, ...}
+              POST /v1/expose_port body: {vm_path, port, scheme?, ...}
               GET  /v1/vms        ?storage=/path
               GET  /v1/vms/ip     ?path=/path/to/bundle
               POST /v1/vms/stop   body: {vm_path, timeout?}

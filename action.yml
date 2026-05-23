@@ -1,0 +1,129 @@
+name: "VM4A run"
+description: "Spawn a VM4A VM on a self-hosted Apple Silicon runner and run a command in it."
+author: "everettjf"
+branding:
+  icon: "box"
+  color: "gray-dark"
+
+inputs:
+  command:
+    description: "Command to run inside the guest (passed to `vm4a exec -- ...`)."
+    required: true
+  name:
+    description: "VM name (becomes <storage>/<name>)."
+    required: false
+    default: "ci"
+  from:
+    description: "OCI reference to pull if the bundle does not exist (e.g. ghcr.io/org/python-dev:latest)."
+    required: false
+    default: ""
+  image:
+    description: "Image spec (catalog id / local path / https URL). Mutually exclusive with `from`."
+    required: false
+    default: ""
+  os:
+    description: "Guest OS: linux (default) or macOS."
+    required: false
+    default: "linux"
+  storage:
+    description: "Parent directory for VM bundles."
+    required: false
+    default: "/tmp/vm4a"
+  wait-timeout:
+    description: "Seconds to wait for SSH."
+    required: false
+    default: "180"
+  exec-timeout:
+    description: "Seconds to allow the command to run."
+    required: false
+    default: "600"
+  allow-domains:
+    description: "Comma-separated egress allow-list applied to the guest (Linux)."
+    required: false
+    default: ""
+  cleanup:
+    description: "Stop and delete the VM after the run."
+    required: false
+    default: "true"
+
+outputs:
+  exit-code:
+    description: "Exit code of the command run in the guest."
+    value: ${{ steps.run.outputs.exit-code }}
+  stdout:
+    description: "Captured stdout from the command."
+    value: ${{ steps.run.outputs.stdout }}
+  ip:
+    description: "Guest IP address."
+    value: ${{ steps.run.outputs.ip }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Build and codesign vm4a
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd "${{ github.action_path }}"
+        swift build -c release
+        codesign --force --sign - \
+          --entitlements Sources/VM4ACLI/VM4ACLI.entitlements \
+          ./.build/release/vm4a
+        echo "${{ github.action_path }}/.build/release" >> "$GITHUB_PATH"
+
+    - name: Spawn and run
+      id: run
+      shell: bash
+      env:
+        VM_NAME: ${{ inputs.name }}
+        VM_FROM: ${{ inputs.from }}
+        VM_IMAGE: ${{ inputs.image }}
+        VM_OS: ${{ inputs.os }}
+        VM_STORAGE: ${{ inputs.storage }}
+        WAIT_TIMEOUT: ${{ inputs.wait-timeout }}
+        EXEC_TIMEOUT: ${{ inputs.exec-timeout }}
+        ALLOW_DOMAINS: ${{ inputs.allow-domains }}
+        VM_COMMAND: ${{ inputs.command }}
+      run: |
+        set -euo pipefail
+
+        spawn_args=("$VM_NAME" --os "$VM_OS" --storage "$VM_STORAGE" --wait-ssh --wait-timeout "$WAIT_TIMEOUT" --output json)
+        [[ -n "$VM_FROM" ]] && spawn_args+=(--from "$VM_FROM")
+        [[ -n "$VM_IMAGE" ]] && spawn_args+=(--image "$VM_IMAGE")
+        [[ -n "$ALLOW_DOMAINS" ]] && spawn_args+=(--allow-domains "$ALLOW_DOMAINS")
+
+        echo "::group::vm4a spawn"
+        spawn_json=$(vm4a spawn "${spawn_args[@]}")
+        echo "$spawn_json"
+        echo "::endgroup::"
+
+        ip=$(printf '%s' "$spawn_json" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("ip") or "")')
+        echo "ip=$ip" >> "$GITHUB_OUTPUT"
+
+        bundle="$VM_STORAGE/$VM_NAME"
+
+        echo "::group::vm4a exec"
+        set +e
+        exec_json=$(vm4a exec "$bundle" --timeout "$EXEC_TIMEOUT" --output json -- bash -lc "$VM_COMMAND")
+        set -e
+        echo "$exec_json"
+        echo "::endgroup::"
+
+        code=$(printf '%s' "$exec_json" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("exit_code", 1))')
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+
+        {
+          echo "stdout<<__VM4A_EOF__"
+          printf '%s' "$exec_json" | python3 -c 'import sys,json; sys.stdout.write(json.load(sys.stdin).get("stdout",""))'
+          echo ""
+          echo "__VM4A_EOF__"
+        } >> "$GITHUB_OUTPUT"
+
+        printf '%s' "$exec_json" | python3 -c 'import sys,json; sys.stdout.write(json.load(sys.stdin).get("stdout",""))'
+
+        if [[ "${{ inputs.cleanup }}" == "true" ]]; then
+          vm4a stop "$bundle" || true
+          rm -rf "$bundle"
+        fi
+
+        exit "$code"

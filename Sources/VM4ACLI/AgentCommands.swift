@@ -9,6 +9,14 @@ private func ownExecutablePath() throws -> String {
     return path
 }
 
+/// Split a `a,b , c` style option into a trimmed, non-empty list.
+func parseCommaList(_ raw: String?) -> [String] {
+    guard let raw else { return [] }
+    return raw.split(separator: ",")
+        .map { $0.trimmingCharacters(in: .whitespaces) }
+        .filter { !$0.isEmpty }
+}
+
 // MARK: - vm4a spawn
 
 struct SpawnCommand: AsyncParsableCommand {
@@ -85,6 +93,9 @@ struct SpawnCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Wait timeout in seconds for IP / SSH")
     var waitTimeout: Int = 90
 
+    @Option(name: .long, help: "Comma-separated domains the guest may reach (Linux egress allow-list; applied once SSH is up). Example: pypi.org,github.com")
+    var allowDomains: String?
+
     @Option(name: .long, help: "Output format: text or json")
     var output: OutputFormat = .text
 
@@ -125,7 +136,8 @@ struct SpawnCommand: AsyncParsableCommand {
             sshUser: sshUser,
             sshKey: sshKey,
             hostOverride: host,
-            waitTimeout: TimeInterval(waitTimeout)
+            waitTimeout: TimeInterval(waitTimeout),
+            allowDomains: parseCommaList(allowDomains)
         )
         let outcome = try await runSpawn(
             options: options,
@@ -510,6 +522,155 @@ struct ResetCommand: ParsableCommand {
             print("Reset \(outcome.path) from snapshot \(outcome.restored)")
             if let pid = outcome.pid { print("  pid: \(pid)") }
             if let ip = outcome.ip { print("  ip:  \(ip)") }
+        }
+    }
+}
+
+// MARK: - vm4a run-code
+
+struct RunCodeCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "run-code",
+        abstract: "Write a code snippet into a running VM and run it with the matching interpreter",
+        discussion: """
+            One call instead of cp + exec. The snippet is written to a private
+            temp file in the guest, run, and removed. Returns the same JSON shape
+            as `exec`: {exit_code, stdout, stderr, duration_ms, timed_out}.
+
+            Languages: python, node, bash, sh, ruby.
+
+            Examples:
+              vm4a run-code /tmp/vm4a/dev --lang python --code 'print(1+1)'
+              vm4a run-code /tmp/vm4a/dev --lang node --file ./script.js --output json
+            """
+    )
+
+    @Argument(help: "Path to VM root directory")
+    var vmPath: String
+
+    @Option(name: .long, help: "Language: python, node, bash, sh, ruby")
+    var lang: String
+
+    @Option(name: .long, help: "Inline source to run (mutually exclusive with --file)")
+    var code: String?
+
+    @Option(name: .long, help: "Read source from this host file (mutually exclusive with --code)")
+    var file: String?
+
+    @Option(name: .long, help: "SSH login user")
+    var user: String?
+
+    @Option(name: .long, help: "SSH key path")
+    var key: String?
+
+    @Option(name: .long, help: "Override target host (skip DHCP lookup)")
+    var host: String?
+
+    @Option(name: .long, help: "Wall-clock timeout in seconds")
+    var timeout: Int = 60
+
+    @Option(name: .long, help: "Output format: text or json")
+    var output: OutputFormat = .text
+
+    @Flag(name: .long, help: "Pretty-print JSON output")
+    var pretty: Bool = false
+
+    @Option(name: .long, help: "Append a session event to <bundle>/.vm4a-sessions/<id>.jsonl")
+    var session: String?
+
+    mutating func run() throws {
+        let source: String
+        switch (code, file) {
+        case let (c?, nil): source = c
+        case let (nil, f?): source = try String(contentsOfFile: f, encoding: .utf8)
+        case (nil, nil): throw VM4AError.message("Provide --code '<source>' or --file <path>.")
+        case (.some, .some): throw VM4AError.message("Pass only one of --code / --file.")
+        }
+
+        let recorder = SessionRecorder(
+            id: session,
+            kind: "run-code",
+            args: ["lang": .string(lang)],
+            vmPath: vmPath
+        )
+        defer { recorder.record() }
+
+        let result = try runCode(options: RunCodeOptions(
+            vmPath: vmPath,
+            language: lang,
+            code: source,
+            user: user,
+            key: key,
+            hostOverride: host,
+            timeout: TimeInterval(timeout)
+        ))
+
+        if result.exitCode == 0 {
+            recorder.markSuccess(vmPath: vmPath, outcome: try? jsonValue(result), summary: "run-code \(lang) → exit 0")
+        } else {
+            recorder.outcomeJSON = try? jsonValue(result)
+            recorder.markFailure(vmPath: vmPath, summary: "run-code \(lang) → exit \(result.exitCode)\(result.timedOut ? " (timed out)" : "")")
+        }
+
+        switch output {
+        case .json:
+            try writeJSONLine(result, pretty: pretty)
+        case .text:
+            FileHandle.standardOutput.write(Data(result.stdout.utf8))
+            FileHandle.standardError.write(Data(result.stderr.utf8))
+        }
+        if result.exitCode != 0 {
+            throw ExitCode(result.exitCode)
+        }
+    }
+}
+
+// MARK: - vm4a expose-port
+
+struct ExposePortCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "expose-port",
+        abstract: "Resolve a host-reachable URL for a port on a running guest",
+        discussion: """
+            NAT guests are routable from the host on their DHCP-leased IP, so
+            this resolves that IP and formats a URL. Returns {url, host, port, scheme}.
+
+            Example:
+              vm4a expose-port /tmp/vm4a/dev --port 8000
+              # → http://192.168.64.7:8000
+            """
+    )
+
+    @Argument(help: "Path to VM root directory")
+    var vmPath: String
+
+    @Option(name: .long, help: "Guest port to expose")
+    var port: Int
+
+    @Option(name: .long, help: "URL scheme (default http)")
+    var scheme: String = "http"
+
+    @Option(name: .long, help: "Override target host (skip DHCP lookup)")
+    var host: String?
+
+    @Option(name: .long, help: "Output format: text or json")
+    var output: OutputFormat = .text
+
+    @Flag(name: .long, help: "Pretty-print JSON output")
+    var pretty: Bool = false
+
+    mutating func run() throws {
+        let result = try exposePort(options: ExposePortOptions(
+            vmPath: vmPath,
+            port: port,
+            scheme: scheme,
+            hostOverride: host
+        ))
+        switch output {
+        case .json:
+            try writeJSONLine(result, pretty: pretty)
+        case .text:
+            print(result.url)
         }
     }
 }

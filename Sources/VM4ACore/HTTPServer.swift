@@ -206,7 +206,7 @@ public func makeVM4ARouter(config: VM4AHTTPServerConfig) -> HTTPRouter {
 
     return HTTPRouter(routes: [
         HTTPRoute(method: "GET", path: "/v1/health") { _ in
-            struct Health: Encodable { let status = "ok"; let version = "2.0.0" }
+            struct Health: Encodable { let status = "ok"; let version = vm4aVersion }
             return .json(Health())
         },
 
@@ -244,7 +244,8 @@ public func makeVM4ARouter(config: VM4AHTTPServerConfig) -> HTTPRouter {
                     sshUser: args["ssh_user"]?.stringValue,
                     sshKey: args["ssh_key"]?.stringValue,
                     hostOverride: args["host"]?.stringValue,
-                    waitTimeout: TimeInterval(args["wait_timeout"]?.intValue ?? 90)
+                    waitTimeout: TimeInterval(args["wait_timeout"]?.intValue ?? 90),
+                    allowDomains: parseAllowDomains(args["allow_domains"])
                 ), executable: executable)
                 return .json(outcome)
             } catch {
@@ -344,6 +345,56 @@ public func makeVM4ARouter(config: VM4AHTTPServerConfig) -> HTTPRouter {
                     waitTimeout: TimeInterval(args["wait_timeout"]?.intValue ?? 60)
                 ), executable: executable)
                 return .json(outcome)
+            } catch {
+                return .error(500, message: "\(error)")
+            }
+        },
+
+        HTTPRoute(method: "POST", path: "/v1/run_code") { req in
+            guard vm4aAuthorized(req, token: token) else { return .unauthorized }
+            do {
+                let args = vm4aDecodeArgs(req.body)
+                guard let vmPath = args["vm_path"]?.stringValue else {
+                    return .error(400, message: "missing 'vm_path'")
+                }
+                guard let lang = args["language"]?.stringValue ?? args["lang"]?.stringValue else {
+                    return .error(400, message: "missing 'language'")
+                }
+                guard let code = args["code"]?.stringValue else {
+                    return .error(400, message: "missing 'code'")
+                }
+                let result = try runCode(options: RunCodeOptions(
+                    vmPath: vmPath,
+                    language: lang,
+                    code: code,
+                    user: args["user"]?.stringValue,
+                    key: args["key"]?.stringValue,
+                    hostOverride: args["host"]?.stringValue,
+                    timeout: TimeInterval(args["timeout"]?.intValue ?? 60)
+                ))
+                return .json(result)
+            } catch {
+                return .error(500, message: "\(error)")
+            }
+        },
+
+        HTTPRoute(method: "POST", path: "/v1/expose_port") { req in
+            guard vm4aAuthorized(req, token: token) else { return .unauthorized }
+            do {
+                let args = vm4aDecodeArgs(req.body)
+                guard let vmPath = args["vm_path"]?.stringValue else {
+                    return .error(400, message: "missing 'vm_path'")
+                }
+                guard let port = args["port"]?.intValue else {
+                    return .error(400, message: "missing 'port'")
+                }
+                let result = try exposePort(options: ExposePortOptions(
+                    vmPath: vmPath,
+                    port: port,
+                    scheme: args["scheme"]?.stringValue ?? "http",
+                    hostOverride: args["host"]?.stringValue
+                ))
+                return .json(result)
             } catch {
                 return .error(500, message: "\(error)")
             }

@@ -248,7 +248,7 @@ public struct MCPServerConfig: Sendable {
 
     public init(
         serverName: String = "vm4a",
-        serverVersion: String = "2.0.0",
+        serverVersion: String = vm4aVersion,
         protocolVersion: String = "2024-11-05",
         executablePath: String
     ) {
@@ -394,7 +394,37 @@ public actor MCPServer {
                         "ssh_user": schemaString("SSH user for wait_ssh probe"),
                         "ssh_key": schemaString("SSH private key path"),
                         "host": schemaString("Override IP (skip DHCP lookup)"),
-                        "wait_timeout": schemaInteger("Seconds for IP/SSH wait. Default 90.")
+                        "wait_timeout": schemaInteger("Seconds for IP/SSH wait. Default 90."),
+                        "allow_domains": schemaArray(of: schemaString(""), description: "Linux egress allow-list: domains the guest may reach (applied once SSH is up).")
+                    ]
+                )
+            ),
+            MCPTool(
+                name: "run_code",
+                description: "Write a code snippet into a running VM and run it with the matching interpreter. Returns {exit_code, stdout, stderr, duration_ms, timed_out}.",
+                inputSchema: schemaObject(
+                    required: ["vm_path", "language", "code"],
+                    properties: [
+                        "vm_path": schemaString("Path to VM bundle"),
+                        "language": schemaEnum(["python", "node", "bash", "sh", "ruby"], description: "Interpreter to run the snippet with"),
+                        "code": schemaString("Source to run in the guest"),
+                        "user": schemaString("SSH user"),
+                        "key": schemaString("SSH key path"),
+                        "host": schemaString("Override target IP"),
+                        "timeout": schemaInteger("Wall-clock timeout seconds. Default 60.")
+                    ]
+                )
+            ),
+            MCPTool(
+                name: "expose_port",
+                description: "Resolve a host-reachable URL for a port on a running guest. Returns {url, host, port, scheme}.",
+                inputSchema: schemaObject(
+                    required: ["vm_path", "port"],
+                    properties: [
+                        "vm_path": schemaString("Path to VM bundle"),
+                        "port": schemaInteger("Guest port"),
+                        "scheme": schemaString("URL scheme (default http)"),
+                        "host": schemaString("Override target IP")
                     ]
                 )
             ),
@@ -716,6 +746,8 @@ public actor MCPServer {
         let exec = config.executablePath
         switch name {
         case "spawn":     return try await callSpawn(arguments, executable: exec)
+        case "run_code":  return try callRunCode(arguments)
+        case "expose_port": return try callExposePort(arguments)
         case "exec":      return try callExec(arguments)
         case "cp":        return try callCp(arguments)
         case "fork":      return try callFork(arguments, executable: exec)
@@ -763,10 +795,41 @@ public actor MCPServer {
             sshUser: obj["ssh_user"]?.stringValue,
             sshKey: obj["ssh_key"]?.stringValue,
             hostOverride: obj["host"]?.stringValue,
-            waitTimeout: TimeInterval(obj["wait_timeout"]?.intValue ?? 90)
+            waitTimeout: TimeInterval(obj["wait_timeout"]?.intValue ?? 90),
+            allowDomains: parseAllowDomains(obj["allow_domains"])
         )
         let outcome = try await runSpawn(options: options, executable: executable)
         return try textResult(outcome)
+    }
+
+    func callRunCode(_ args: JSONValue) throws -> MCPCallResult {
+        let obj = args.objectValue ?? [:]
+        guard let vmPath = obj["vm_path"]?.stringValue else { throw MCPCallError("run_code: 'vm_path' required") }
+        guard let lang = obj["language"]?.stringValue ?? obj["lang"]?.stringValue else { throw MCPCallError("run_code: 'language' required") }
+        guard let code = obj["code"]?.stringValue else { throw MCPCallError("run_code: 'code' required") }
+        let result = try runCode(options: RunCodeOptions(
+            vmPath: vmPath,
+            language: lang,
+            code: code,
+            user: obj["user"]?.stringValue,
+            key: obj["key"]?.stringValue,
+            hostOverride: obj["host"]?.stringValue,
+            timeout: TimeInterval(obj["timeout"]?.intValue ?? 60)
+        ))
+        return try textResult(result, isError: result.exitCode != 0)
+    }
+
+    func callExposePort(_ args: JSONValue) throws -> MCPCallResult {
+        let obj = args.objectValue ?? [:]
+        guard let vmPath = obj["vm_path"]?.stringValue else { throw MCPCallError("expose_port: 'vm_path' required") }
+        guard let port = obj["port"]?.intValue else { throw MCPCallError("expose_port: 'port' required") }
+        let result = try exposePort(options: ExposePortOptions(
+            vmPath: vmPath,
+            port: port,
+            scheme: obj["scheme"]?.stringValue ?? "http",
+            hostOverride: obj["host"]?.stringValue
+        ))
+        return try textResult(result)
     }
 
     func callExec(_ args: JSONValue) throws -> MCPCallResult {
