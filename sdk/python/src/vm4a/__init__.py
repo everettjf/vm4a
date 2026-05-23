@@ -23,6 +23,7 @@ from .client import (
     StopOutcome,
     VMSummary,
     Lease,
+    ExposeResult,
     VM4AHTTPError,
 )
 
@@ -35,6 +36,7 @@ __all__ = [
     "StopOutcome",
     "VMSummary",
     "Lease",
+    "ExposeResult",
     "VM4AHTTPError",
 ]
-__version__ = "2.0.0"
+__version__ = "2.5.0"

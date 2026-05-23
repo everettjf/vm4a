@@ -271,6 +271,10 @@ public struct SpawnOptions: Sendable {
     public var sshKey: String?
     public var hostOverride: String?
     public var waitTimeout: TimeInterval
+    /// Domains the guest is allowed to reach. When non-empty, an nftables
+    /// egress allow-list is written to the bundle and applied once SSH is
+    /// reachable (Linux guests only).
+    public var allowDomains: [String]
 
     public init(
         name: String,
@@ -291,7 +295,8 @@ public struct SpawnOptions: Sendable {
         sshUser: String? = nil,
         sshKey: String? = nil,
         hostOverride: String? = nil,
-        waitTimeout: TimeInterval = 90
+        waitTimeout: TimeInterval = 90,
+        allowDomains: [String] = []
     ) {
         self.name = name
         self.os = os
@@ -316,6 +321,7 @@ public struct SpawnOptions: Sendable {
         self.sshKey = sshKey
         self.hostOverride = hostOverride
         self.waitTimeout = waitTimeout
+        self.allowDomains = allowDomains
     }
 }
 
@@ -398,6 +404,21 @@ public func runSpawn(
         let user = options.sshUser ?? defaultSSHUser(for: model.config.type)
         let opts = SSHOptions(user: user, keyPath: options.sshKey)
         sshReady = waitForSSHReady(host: ip, options: opts, timeout: options.waitTimeout)
+    }
+
+    if !options.allowDomains.isEmpty {
+        // Persist the policy so `vm4a network guard` can re-apply it later.
+        try? writeEgressPolicy(EgressPolicy(allowDomains: options.allowDomains), to: model.egressPolicyURL)
+        if model.config.type == .linux, sshReady, let ip = resolvedIP {
+            let user = options.sshUser ?? defaultSSHUser(for: model.config.type)
+            let opts = SSHOptions(user: user, keyPath: options.sshKey)
+            let result = try applyEgressPolicy(host: ip, sshOptions: opts, allowDomains: options.allowDomains, timeout: options.waitTimeout)
+            if result.exitCode != 0 {
+                progress?("warning: egress policy not applied (exit \(result.exitCode)): \(result.stderr)")
+            }
+        } else {
+            progress?("note: --allow-domains saved but not applied (needs a reachable Linux guest; use --wait-ssh).")
+        }
     }
 
     return SpawnOutcome(
@@ -514,6 +535,123 @@ public func runCp(options: CpOptions) throws -> ExecResult {
 
     let sshOpts = SSHOptions(user: user, keyPath: options.key)
     return scpCopy(options: sshOpts, source: scpSource, destination: scpDestination, recursive: options.recursive, timeout: options.timeout)
+}
+
+// MARK: - Run code (high-level: write a snippet into the guest and run it)
+
+/// Map a user-facing language name to the interpreter binary invoked in the
+/// guest. Case-insensitive. Throws for anything unrecognised.
+public func interpreterForLanguage(_ language: String) throws -> String {
+    switch language.lowercased() {
+    case "python", "python3", "py":  return "python3"
+    case "node", "javascript", "js": return "node"
+    case "bash":                     return "bash"
+    case "sh", "shell":              return "sh"
+    case "ruby", "rb":               return "ruby"
+    default:
+        throw VM4AError.message("Unsupported language '\(language)'. Use one of: python, node, bash, sh, ruby.")
+    }
+}
+
+/// Wrap a string as a single POSIX-shell-quoted token. Safe to embed in a
+/// command that is then space-joined and re-parsed by one remote shell (which
+/// is exactly how `ssh host argv...` behaves).
+public func shellSingleQuote(_ s: String) -> String {
+    "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
+}
+
+/// Build the argv handed to `exec` for running base64-encoded source under
+/// `interpreter` in the guest. Pure (no I/O) so it can be unit-tested.
+/// The snippet is written to a private temp file, run, and removed; the
+/// interpreter's exit code is propagated.
+public func runCodeRemoteCommand(interpreter: String, base64Code: String) -> [String] {
+    let script = "f=$(mktemp /tmp/vm4a-code.XXXXXX) && printf %s \(shellSingleQuote(base64Code)) | base64 -d > \"$f\" && \(interpreter) \"$f\"; rc=$?; rm -f \"$f\"; exit $rc"
+    return ["sh", "-c", shellSingleQuote(script)]
+}
+
+public struct RunCodeOptions: Sendable {
+    public var vmPath: String
+    public var language: String
+    public var code: String
+    public var user: String?
+    public var key: String?
+    public var hostOverride: String?
+    public var timeout: TimeInterval
+
+    public init(
+        vmPath: String,
+        language: String,
+        code: String,
+        user: String? = nil,
+        key: String? = nil,
+        hostOverride: String? = nil,
+        timeout: TimeInterval = 60
+    ) {
+        self.vmPath = vmPath
+        self.language = language
+        self.code = code
+        self.user = user
+        self.key = key
+        self.hostOverride = hostOverride
+        self.timeout = timeout
+    }
+}
+
+public func runCode(options: RunCodeOptions) throws -> ExecResult {
+    let interpreter = try interpreterForLanguage(options.language)
+    let b64 = Data(options.code.utf8).base64EncodedString()
+    let command = runCodeRemoteCommand(interpreter: interpreter, base64Code: b64)
+    return try runExec(options: ExecOptions(
+        vmPath: options.vmPath,
+        user: options.user,
+        key: options.key,
+        hostOverride: options.hostOverride,
+        timeout: options.timeout,
+        command: command
+    ))
+}
+
+// MARK: - Expose port (high-level: resolve a host-reachable URL for a guest port)
+
+public struct ExposeResult: Codable, Sendable {
+    public let url: String
+    public let host: String
+    public let port: Int
+    public let scheme: String
+
+    public init(url: String, host: String, port: Int, scheme: String) {
+        self.url = url
+        self.host = host
+        self.port = port
+        self.scheme = scheme
+    }
+}
+
+public struct ExposePortOptions: Sendable {
+    public var vmPath: String
+    public var port: Int
+    public var scheme: String
+    public var hostOverride: String?
+
+    public init(vmPath: String, port: Int, scheme: String = "http", hostOverride: String? = nil) {
+        self.vmPath = vmPath
+        self.port = port
+        self.scheme = scheme
+        self.hostOverride = hostOverride
+    }
+}
+
+/// Resolve the address the host can use to reach a guest service. NAT guests
+/// are routable from the host on their DHCP-leased IP, so "exposing" a port is
+/// just resolving that IP and formatting a URL — no tunnel required.
+public func exposePort(options: ExposePortOptions) throws -> ExposeResult {
+    guard options.port > 0, options.port <= 65535 else {
+        throw VM4AError.message("port must be in 1…65535")
+    }
+    let model = try loadModel(rootPath: URL(fileURLWithPath: options.vmPath, isDirectory: true))
+    let host = try resolveHost(model: model, override: options.hostOverride)
+    let url = "\(options.scheme)://\(host):\(options.port)"
+    return ExposeResult(url: url, host: host, port: options.port, scheme: options.scheme)
 }
 
 // MARK: - Fork

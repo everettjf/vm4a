@@ -30,6 +30,7 @@ struct VM4ACLI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "vm4a",
         abstract: "VM4A — Virtual Machines for Agents (Apple Silicon)",
+        version: vm4aVersion,
         subcommands: [
             // Agent-first primitives (P0)
             SpawnCommand.self,
@@ -37,9 +38,12 @@ struct VM4ACLI: AsyncParsableCommand {
             CpCommand.self,
             ForkCommand.self,
             ResetCommand.self,
+            RunCodeCommand.self,
+            ExposePortCommand.self,
             // Agent integrations (P1, v2.1)
             MCPCommand.self,
             ServeCommand.self,
+            ClusterCommand.self,
             // Sessions + pools (v2.3 + v2.4 foundations)
             SessionCommand.self,
             PoolCommand.self,
@@ -368,10 +372,76 @@ struct CloneCommand: ParsableCommand {
 struct NetworkCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "network",
-        abstract: "Inspect host network interfaces",
-        subcommands: [ListBridgedCommand.self],
+        abstract: "Inspect host network interfaces and apply guest egress policy",
+        subcommands: [ListBridgedCommand.self, GuardCommand.self],
         defaultSubcommand: ListBridgedCommand.self
     )
+}
+
+struct GuardCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "guard",
+        abstract: "Apply (or re-apply) an nftables egress allow-list inside a running Linux guest",
+        discussion: """
+            With --allow-domains, writes the policy to <bundle>/egress.json and
+            applies it. Without it, re-applies the previously saved policy.
+
+            Example:
+              vm4a network guard /tmp/vm4a/dev --allow-domains pypi.org,github.com
+            """
+    )
+
+    @Argument(help: "Path to VM root directory")
+    var vmPath: String
+
+    @Option(name: .long, help: "Comma-separated domains to allow. If omitted, reuse <bundle>/egress.json.")
+    var allowDomains: String?
+
+    @Option(name: .long, help: "SSH login user")
+    var user: String?
+
+    @Option(name: .long, help: "SSH key path")
+    var key: String?
+
+    @Option(name: .long, help: "Override target host (skip DHCP lookup)")
+    var host: String?
+
+    @Option(name: .long, help: "Wall-clock timeout in seconds")
+    var timeout: Int = 60
+
+    mutating func run() throws {
+        let rootURL = URL(fileURLWithPath: vmPath, isDirectory: true)
+        let model = try loadModel(rootPath: rootURL)
+        guard model.config.type == .linux else {
+            throw VM4AError.message("Egress policy is Linux-only (guest needs nftables).")
+        }
+
+        let domains: [String]
+        if let parsed = allowDomains.map(parseCommaList), !parsed.isEmpty {
+            domains = parsed
+            try writeEgressPolicy(EgressPolicy(allowDomains: domains), to: model.egressPolicyURL)
+        } else if let saved = readEgressPolicy(at: model.egressPolicyURL), !saved.allowDomains.isEmpty {
+            domains = saved.allowDomains
+        } else {
+            throw VM4AError.message("No --allow-domains given and no saved policy at \(model.egressPolicyURL.path()).")
+        }
+
+        let target: String
+        if let host { target = host }
+        else if let lease = findLeasesForBundle(model).first { target = lease.ipAddress }
+        else { throw VM4AError.notFound("DHCP lease for \(model.config.name); pass --host if bridged.") }
+
+        let user = self.user ?? "root"
+        let result = try applyEgressPolicy(
+            host: target,
+            sshOptions: SSHOptions(user: user, keyPath: key),
+            allowDomains: domains,
+            timeout: TimeInterval(timeout)
+        )
+        FileHandle.standardOutput.write(Data(result.stdout.utf8))
+        FileHandle.standardError.write(Data(result.stderr.utf8))
+        if result.exitCode != 0 { throw ExitCode(result.exitCode) }
+    }
 }
 
 struct ListBridgedCommand: ParsableCommand {

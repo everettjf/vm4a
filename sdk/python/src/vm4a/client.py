@@ -86,6 +86,14 @@ class Lease:
     name: str | None
 
 
+@dataclass
+class ExposeResult:
+    url: str
+    host: str
+    port: int
+    scheme: str
+
+
 def _camel_to_snake(name: str) -> str:
     out: list[str] = []
     for ch in name:
@@ -198,6 +206,7 @@ class Client:
         ssh_key: str | None = None,
         host: str | None = None,
         wait_timeout: int = 90,
+        allow_domains: Sequence[str] | None = None,
         timeout: float | None = None,
     ) -> SpawnOutcome:
         body = _drop_none({
@@ -209,6 +218,7 @@ class Client:
             "wait_ip": wait_ip, "wait_ssh": wait_ssh,
             "ssh_user": ssh_user, "ssh_key": ssh_key,
             "host": host, "wait_timeout": wait_timeout,
+            "allow_domains": list(allow_domains) if allow_domains else None,
         })
         # spawn can take a while; bias timeout up if not set
         effective = timeout if timeout is not None else max(self.default_timeout, wait_timeout + 5)
@@ -233,6 +243,41 @@ class Client:
         })
         effective = timeout if timeout is not None else max(self.default_timeout, timeout_seconds + 5)
         return _from_dict(ExecResult, self._request("POST", "/v1/exec", body=body, timeout=effective))
+
+    def run_code(
+        self,
+        vm_path: str,
+        language: str,
+        code: str,
+        *,
+        user: str | None = None,
+        key: str | None = None,
+        host: str | None = None,
+        timeout_seconds: int = 60,
+        timeout: float | None = None,
+    ) -> ExecResult:
+        body = _drop_none({
+            "vm_path": vm_path,
+            "language": language,
+            "code": code,
+            "user": user, "key": key, "host": host,
+            "timeout": timeout_seconds,
+        })
+        effective = timeout if timeout is not None else max(self.default_timeout, timeout_seconds + 5)
+        return _from_dict(ExecResult, self._request("POST", "/v1/run_code", body=body, timeout=effective))
+
+    def expose_port(
+        self,
+        vm_path: str,
+        port: int,
+        *,
+        scheme: str = "http",
+        host: str | None = None,
+    ) -> ExposeResult:
+        body = _drop_none({
+            "vm_path": vm_path, "port": port, "scheme": scheme, "host": host,
+        })
+        return _from_dict(ExposeResult, self._request("POST", "/v1/expose_port", body=body))
 
     def cp(
         self,

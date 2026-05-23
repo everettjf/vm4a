@@ -106,10 +106,13 @@ cp ./.build/release/vm4a /usr/local/bin/
 
 ## What's shipped
 
-**Latest — v2.4** · warm-pool runtime + network sandbox
+**Latest — v2.5** · higher-level surface + multi-host
 
-- `vm4a pool serve / acquire / release` — keep N idle VMs warm, hand one out in milliseconds.
-- `--network none | nat | bridged | host` — explicit isolation level per VM.
+- `vm4a run-code <vm> --lang python --code '…'` — drop a snippet into the guest and run it in one call (also MCP `run_code` / `POST /v1/run_code`).
+- `vm4a expose-port <vm> --port 8000` — get a host-reachable `{url, host, port}` for a guest service.
+- `--allow-domains a.com,b.com` — Linux egress allow-list (nftables) for network-restricted runs.
+- `vm4a cluster add/spawn/exec/status` — schedule across remote `vm4a serve` nodes.
+- JS/TS SDK (`sdk/typescript`) + a reusable GitHub Action (`action.yml`).
 
 <details>
 <summary>Full release history</summary>
@@ -123,8 +126,13 @@ cp ./.build/release/vm4a /usr/local/bin/
 | v2.2 | Curated OCI templates (`ubuntu-base`, `python-dev`, `xcode-dev`) | ✅ shipped *(macOS template needs one-time Setup Assistant click-through)* |
 | v2.3 | Time Machine viewer (`vm4a-sessions` SwiftUI app + `vm4a session` CLI) | ✅ shipped *(standalone; main-app integration pending)* |
 | v2.4 | Warm-pool runtime + `--network` sandbox | ✅ shipped |
+| v2.5 | `run-code` / `expose-port`, egress allow-list, JS/TS SDK, GitHub Action, `cluster` scheduler | ✅ shipped |
 
 See [CHANGELOG.md](CHANGELOG.md) for per-version detail.
+
+> **Benchmarks:** numbers (fork / boot-to-SSH / `pool acquire`) are produced on
+> real Apple Silicon by [`scripts/bench.sh`](scripts/bench.sh) — run it on your
+> Mac and paste the Markdown table here.
 
 </details>
 
