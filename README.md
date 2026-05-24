@@ -12,7 +12,7 @@ Built on Apple's [Virtualization framework](https://developer.apple.com/document
 [![Latest release](https://img.shields.io/github/v/release/everettjf/vm4a?label=release)](https://github.com/everettjf/vm4a/releases/latest)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Chat-7289DA?logo=discord&logoColor=white)](https://discord.gg/uxuy3vVtWs)
 
-[**Why VM4A**](#why-vm4a) · [**30s demo**](#30-second-demo) · [**Install**](#install) · [**Cookbook**](Cookbook.md) · [**Usage**](Usage.md) · [**Developer**](Developer.md) · [中文](README.zh-CN.md)
+[**Why VM4A**](#why-vm4a) · [**30s demo**](#30-second-demo) · [**Install**](#install) · [**Tutorials**](https://everettjf.github.io/vm4a/) · [**Cookbook**](Cookbook.md) · [**Usage**](Usage.md) · [**Developer**](Developer.md) · [中文](README.zh-CN.md)
 
 </div>
 
@@ -156,6 +156,7 @@ See [CHANGELOG.md](CHANGELOG.md) for per-version detail.
 
 | If you want to… | Read |
 |---|---|
+| Learn step by step (start here) | [**Tutorials site**](https://everettjf.github.io/vm4a/) — progressive guides from first VM to cluster/CI ([source](docs/)) |
 | Get hands-on with end-to-end recipes | [**Cookbook.md**](Cookbook.md) — macOS / Linux guests, agent loops, sessions, pools, MCP/HTTP setup |
 | See full scenarios (golden image + parallel forks, etc.) | [**UseCases/**](UseCases/) |
 | Look up a flag or JSON shape | [**Usage.md**](Usage.md) — per-command reference |
