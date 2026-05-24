@@ -5,3 +5,10 @@ VM4A/VM4A.xcodeproj/xcshareddata/
 .DS_Store
 .build/
 .swiftpm/
+
+# GitHub Pages (docs/) local build artifacts
+docs/_site/
+docs/.jekyll-cache/
+docs/.bundle/
+docs/vendor/
+docs/Gemfile.lock

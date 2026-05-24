@@ -12,7 +12,7 @@
 [![Latest release](https://img.shields.io/github/v/release/everettjf/vm4a?label=release)](https://github.com/everettjf/vm4a/releases/latest)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Chat-7289DA?logo=discord&logoColor=white)](https://discord.gg/uxuy3vVtWs)
 
-[**为什么**](#为什么要做-vm4a) · [**30 秒上手**](#30-秒看一遍) · [**安装**](#安装) · [**Cookbook**](Cookbook.zh-CN.md) · [**Usage**](Usage.zh-CN.md) · [**Developer**](Developer.zh-CN.md) · [English](README.md)
+[**为什么**](#为什么要做-vm4a) · [**30 秒上手**](#30-秒看一遍) · [**安装**](#安装) · [**教程站**](https://everettjf.github.io/vm4a/) · [**Cookbook**](Cookbook.zh-CN.md) · [**Usage**](Usage.zh-CN.md) · [**Developer**](Developer.zh-CN.md) · [English](README.md)
 
 </div>
 
@@ -148,6 +148,7 @@ cp ./.build/release/vm4a /usr/local/bin/
 
 | 你想做的事 | 看这里 |
 |---|---|
+| 逐步学习（从这开始） | [**教程站**](https://everettjf.github.io/vm4a/) —— 从第一台 VM 到集群/CI 的渐进式教程（[源码](docs/)，目前英文，中文待补） |
 | 上手实战、端到端 recipe | [**Cookbook.zh-CN.md**](Cookbook.zh-CN.md) —— macOS / Linux guest、Agent loop、sessions、pools、MCP/HTTP 接入 |
 | 完整场景方案（golden image + 并行 fork 等） | [**UseCases/**](UseCases/) |
 | 查 flag 或 JSON 字段 | [**Usage.zh-CN.md**](Usage.zh-CN.md) —— 每个命令的完整参考 |

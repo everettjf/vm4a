@@ -1,0 +1,21 @@
+# For local preview of the GitHub Pages site:
+#   cd docs && bundle install && bundle exec jekyll serve
+# GitHub Pages itself builds this with the github-pages gem; the Gemfile is
+# only needed if you want to preview locally.
+source "https://rubygems.org"
+
+gem "github-pages", group: :jekyll_plugins
+gem "jekyll-remote-theme"
+gem "jekyll-seo-tag"
+
+# Windows / macOS compatibility shims commonly needed by Jekyll.
+gem "webrick", "~> 1.8"
+
+# Ruby 3.4+ / 4.0 removed these from the default gems; the pinned Jekyll still
+# needs them for local preview. (GitHub Pages builds with its own Ruby and
+# ignores this Gemfile, so these are harmless there.)
+gem "csv"
+gem "base64"
+gem "bigdecimal"
+gem "logger"
+gem "ostruct"
