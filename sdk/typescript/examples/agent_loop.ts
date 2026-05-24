@@ -44,15 +44,15 @@ async function main(): Promise<number> {
 
   // 3. Run code directly (no manual cp + exec).
   const out = await c.runCode(taskPath, "python", "import platform; print('hello from', platform.node())");
-  console.log(`  exit=${out.exitCode} stdout=${JSON.stringify(out.stdout)}`);
+  console.log(`  exit=${out.exit_code} stdout=${JSON.stringify(out.stdout)}`);
 
   // 4. Reset on failure.
-  if (out.exitCode !== 0) {
+  if (out.exit_code !== 0) {
     await c.reset(taskPath, snapshot, { waitIp: true });
   }
 
   await c.stop(taskPath);
-  return out.exitCode;
+  return out.exit_code;
 }
 
 main().then((code) => process.exit(code));

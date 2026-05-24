@@ -28,6 +28,12 @@ print("VM ready:", vm.id, vm.ip)
 out = c.exec(vm.path, ["python3", "-c", "print(1+1)"], timeout_seconds=30)
 print("exit", out.exit_code, "stdout:", out.stdout)
 
+# Or drop a snippet in and run it in one call (no cp + exec)
+out = c.run_code(vm.path, "python", "print(1+1)")
+
+# Resolve a host-reachable URL for a guest port
+print("service at", c.expose_port(vm.path, 8000).url)   # http://192.168.64.7:8000
+
 # Push code in, run a step
 c.cp(vm.path, "./step.py", ":/work/step.py")
 result = c.exec(vm.path, ["python3", "/work/step.py"])
@@ -51,6 +57,8 @@ Client(token="...")
 | Method | Maps to |
 |---|---|
 | `client.spawn(...)` | `POST /v1/spawn` |
+| `client.run_code(vm_path, lang, code)` | `POST /v1/run_code` |
+| `client.expose_port(vm_path, port)` | `POST /v1/expose_port` |
 | `client.exec(vm_path, [...])` | `POST /v1/exec` |
 | `client.cp(vm_path, src, dst)` | `POST /v1/cp` |
 | `client.fork(src, dst, ...)` | `POST /v1/fork` |

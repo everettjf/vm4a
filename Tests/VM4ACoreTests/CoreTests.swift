@@ -52,6 +52,37 @@ struct CoreTests {
     }
 
     @Test
+    func agentResultsUseSnakeCaseWireFormat() throws {
+        // The documented HTTP/CLI/MCP contract is snake_case. Swift properties
+        // stay camelCase; CodingKeys bridge the two and must round-trip.
+        let exec = ExecResult(exitCode: 7, stdout: "o", stderr: "e", durationMs: 42, timedOut: true)
+        let execJSON = String(decoding: try JSONEncoder().encode(exec), as: UTF8.self)
+        #expect(execJSON.contains("\"exit_code\":7"))
+        #expect(execJSON.contains("\"duration_ms\":42"))
+        #expect(execJSON.contains("\"timed_out\":true"))
+        #expect(!execJSON.contains("exitCode"))
+        let execBack = try JSONDecoder().decode(ExecResult.self, from: Data(execJSON.utf8))
+        #expect(execBack.exitCode == 7 && execBack.durationMs == 42 && execBack.timedOut)
+
+        let spawn = SpawnOutcome(id: "i", name: "n", path: "/p", os: "linux", pid: 9, ip: "1.2.3.4", sshReady: true)
+        let spawnJSON = String(decoding: try JSONEncoder().encode(spawn), as: UTF8.self)
+        #expect(spawnJSON.contains("\"ssh_ready\":true"))
+        #expect(!spawnJSON.contains("sshReady"))
+        #expect(try JSONDecoder().decode(SpawnOutcome.self, from: Data(spawnJSON.utf8)).sshReady)
+    }
+
+    @Test
+    func loadModelThrowsCleanNotFoundWhenConfigMissing() throws {
+        // A missing bundle should surface a typed VM4AError (not a raw Foundation
+        // NSCocoaError), so the CLI/HTTP/MCP surfaces report a clean message.
+        let missingRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appending(path: "vm4a-missing-\(UUID().uuidString)", directoryHint: .isDirectory)
+        #expect(throws: VM4AError.self) {
+            _ = try loadModel(rootPath: missingRoot)
+        }
+    }
+
+    @Test
     func pidHelpersReadWriteAndClear() throws {
         let testRoot = URL(fileURLWithPath: NSTemporaryDirectory())
             .appending(path: "vm4a-core-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
