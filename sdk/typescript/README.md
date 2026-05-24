@@ -26,7 +26,7 @@ console.log("VM ready:", vm.id, vm.ip);
 
 // Run a snippet directly — no manual cp + exec.
 const out = await c.runCode(vm.path, "python", "print(1 + 1)");
-console.log("exit", out.exitCode, "stdout:", out.stdout);
+console.log("exit", out.exit_code, "stdout:", out.stdout);
 
 // Resolve a host-reachable URL for a guest port.
 const { url } = await c.exposePort(vm.path, 8000);

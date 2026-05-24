@@ -10,6 +10,15 @@ public struct ExecResult: Codable, Sendable {
     public let durationMs: Int
     public let timedOut: Bool
 
+    // Wire format is snake_case (the documented HTTP/CLI/MCP contract); Swift
+    // property names stay camelCase.
+    enum CodingKeys: String, CodingKey {
+        case exitCode = "exit_code"
+        case stdout, stderr
+        case durationMs = "duration_ms"
+        case timedOut = "timed_out"
+    }
+
     public init(exitCode: Int32, stdout: String, stderr: String, durationMs: Int, timedOut: Bool) {
         self.exitCode = exitCode
         self.stdout = stdout
@@ -47,6 +56,12 @@ public struct SpawnOutcome: Codable, Sendable {
     public let pid: Int32?
     public let ip: String?
     public let sshReady: Bool
+
+    // snake_case on the wire; camelCase Swift property. See ExecResult.
+    enum CodingKeys: String, CodingKey {
+        case id, name, path, os, pid, ip
+        case sshReady = "ssh_ready"
+    }
 
     public init(id: String, name: String, path: String, os: String, pid: Int32?, ip: String?, sshReady: Bool) {
         self.id = id

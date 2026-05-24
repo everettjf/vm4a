@@ -69,9 +69,10 @@ vm4a exec /tmp/vm4a/task-42 -- bash /work/agent_step.sh
 |---|---|---|
 | 🐚 **CLI** | Shell scripts, CI, manual exploration | `vm4a <command>` |
 | 🤖 **MCP** | Claude Code, Cursor, Cline, any MCP-aware AI | `vm4a mcp` (stdio JSON-RPC) |
-| 🌐 **HTTP + Python SDK** | Custom Python harnesses, language bindings | `vm4a serve` + `pip install vm4a` |
+| 🌐 **HTTP + SDKs** | Custom harnesses, language bindings | `vm4a serve` + Python (`pip install vm4a`) or JS/TS (`sdk/typescript`) |
+| 🛰 **Cluster** | Many Macs as one pool | `vm4a cluster add/spawn/exec` over remote `vm4a serve` nodes |
 
-All three share the same agent primitives: `spawn`, `exec`, `cp`, `fork`, `reset`, `list`, `ip`, `stop`. Pick whichever surface fits the consumer.
+All surfaces share the same agent primitives: `spawn`, `run-code`, `expose-port`, `exec`, `cp`, `fork`, `reset`, `list`, `ip`, `stop`. Pick whichever fits the consumer. See [**Usage.md**](Usage.md) for the per-command reference.
 
 ---
 
@@ -148,6 +149,8 @@ See [CHANGELOG.md](CHANGELOG.md) for per-version detail.
 | Hack on VM4A itself | [**Developer.md**](Developer.md) — repo layout, architecture, build, tests, release flow |
 | See what changed | [**CHANGELOG.md**](CHANGELOG.md) |
 | Use the Python SDK | [**sdk/python/README.md**](sdk/python/README.md) |
+| Use the JS/TS SDK | [**sdk/typescript/README.md**](sdk/typescript/README.md) |
+| Run VMs from CI (GitHub Action) | [**action.yml**](action.yml) — self-hosted Apple Silicon runners |
 | Pull / rebuild a template | [**templates/README.md**](templates/README.md) |
 
 > Using **Claude Code**? The repo ships a local skill at `.claude/skills/vm4a-cli/SKILL.md` that teaches Claude how to drive every subcommand.

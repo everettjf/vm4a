@@ -8,14 +8,16 @@ How to actually drive `vm4a` — every command, every integration, with worked e
 
 - [Quickstart](#quickstart)
 - [The agent loop](#the-agent-loop)
-- [Agent primitives](#agent-primitives) — `spawn`, `exec`, `cp`, `fork`, `reset`
+- [Agent primitives](#agent-primitives) — `spawn`, `exec`, `cp`, `fork`, `reset`, `run-code`, `expose-port`
 - [Classic lifecycle](#classic-lifecycle) — `create`, `list`, `run`, `stop`, `clone`, `ip`, `ssh`
 - [MCP — Claude Code, Cursor, Cline](#mcp-claude-code-cursor-cline)
-- [HTTP API and Python SDK](#http-api-and-python-sdk)
+- [HTTP API and SDKs](#http-api-and-sdks) — Python + JavaScript/TypeScript
+- [Cluster — scheduling across hosts](#cluster-scheduling-across-hosts)
+- [GitHub Action](#github-action)
 - [Sessions — recording agent runs](#sessions-recording-agent-runs)
 - [Pools — minting per-task VMs](#pools-minting-per-task-vms)
 - [OCI templates and registries](#oci-templates-and-registries)
-- [Networking](#networking)
+- [Networking](#networking) — modes + egress allow-list
 - [Rosetta (x86 in Linux guests)](#rosetta-x86-in-linux-guests)
 - [Snapshots (macOS 14+)](#snapshots-macos-14)
 - [Bundle layout](#bundle-layout)
@@ -170,6 +172,42 @@ vm4a reset <vm-path> --from <state.vzstate>
 
 For try → fail → reset → retry agent loops. Stops the VM (SIGTERM → SIGKILL) and restarts it from the supplied `.vzstate`. Requires macOS 14+ and a previously saved snapshot (see `--save-on-stop` on `run` and `spawn`).
 
+### run-code — write a snippet and run it in one call
+
+```
+vm4a run-code <vm-path> --lang python|node|bash|sh|ruby
+                        (--code '<source>' | --file <host-path>)
+                        [--user <name>] [--key <path>] [--host <ip>]
+                        [--timeout <seconds>] [--output text|json]
+                        [--pretty] [--session <id>]
+```
+
+One call instead of `cp` + `exec`. The snippet is written to a private temp file inside the guest, run with the matching interpreter, then removed. Returns the same JSON shape as `exec` — `{exit_code, stdout, stderr, duration_ms, timed_out}`.
+
+```bash
+vm4a run-code /tmp/vm4a/dev --lang python --code 'print(1+1)'
+vm4a run-code /tmp/vm4a/dev --lang node --file ./script.js --output json
+```
+
+Supported languages map to `python3`, `node`, `bash`, `sh`, and `ruby`. Pass exactly one of `--code` / `--file`; an unknown language or both/neither source is rejected before any SSH happens.
+
+### expose-port — resolve a host-reachable URL for a guest port
+
+```
+vm4a expose-port <vm-path> --port <n> [--scheme http|https]
+                           [--host <ip>] [--output text|json] [--pretty]
+```
+
+NAT guests are routable from the host on their DHCP-leased IP, so "exposing" a port is just resolving that IP and formatting a URL — no tunnel, no port-forwarding daemon. Returns `{url, host, port, scheme}`; the text form prints just the URL.
+
+```bash
+vm4a run-code /tmp/vm4a/dev --lang bash --code 'python3 -m http.server 8000 &'
+vm4a expose-port /tmp/vm4a/dev --port 8000
+# → http://192.168.64.7:8000
+```
+
+`--host <ip>` skips the DHCP lookup entirely (use it for bridged VMs, where Apple's DHCP server has no lease) — it then needs no bundle at all and just formats the URL.
+
 ---
 
 ## Classic lifecycle
@@ -208,11 +246,13 @@ Register `vm4a` as an MCP server and the assistant gets every agent primitive as
 
 **Cursor** — same JSON to `~/.cursor/mcp.json`. **Cline** — paste into the Cline settings panel under "MCP Servers".
 
-The server speaks JSON-RPC 2.0 framed by newlines (standard MCP stdio transport, protocol version `2024-11-05`). Eight tools are exposed:
+The server speaks JSON-RPC 2.0 framed by newlines (standard MCP stdio transport, protocol version `2024-11-05`). Ten tools are exposed:
 
 | Tool | Returns |
 |---|---|
 | `spawn` | `{id, name, path, os, pid, ip, ssh_ready}` |
+| `run_code` | `{exit_code, stdout, stderr, duration_ms, timed_out}` — write a snippet and run it |
+| `expose_port` | `{url, host, port, scheme}` |
 | `exec` | `{exit_code, stdout, stderr, duration_ms, timed_out}` |
 | `cp` | Same shape as `exec` |
 | `fork` | `{path, name, started, pid, ip}` |
@@ -248,20 +288,23 @@ In addition to tools, the server exposes:
 
 ---
 
-## HTTP API and Python SDK
+## HTTP API and SDKs
 
-For non-MCP clients (CI runners, custom Python harnesses, language bindings beyond Python), `vm4a` exposes the same operations as a localhost HTTP server.
+For non-MCP clients (CI runners, custom harnesses, language bindings), `vm4a` exposes the same operations as a localhost HTTP server.
 
 ```bash
 # Server
 vm4a serve --port 7777
 # Optional bearer auth: export VM4A_AUTH_TOKEN=... before starting
+# Bind to all interfaces (for remote/cluster use): vm4a serve --bind 0.0.0.0
 ```
 
 | Endpoint | Body | Returns |
 |---|---|---|
-| `GET /v1/health` | — | `{status, version}` |
+| `GET /v1/health` | — | `{status, version}` *(unauthenticated — for health checks)* |
 | `POST /v1/spawn` | SpawnOptions JSON | SpawnOutcome |
+| `POST /v1/run_code` | `{vm_path, language, code, ...}` | ExecResult |
+| `POST /v1/expose_port` | `{vm_path, port, scheme?, host?}` | `{url, host, port, scheme}` |
 | `POST /v1/exec` | `{vm_path, command, ...}` | ExecResult |
 | `POST /v1/cp` | `{vm_path, source, destination, ...}` | ExecResult |
 | `POST /v1/fork` | `{source_path, destination_path, ...}` | ForkOutcome |
@@ -270,18 +313,118 @@ vm4a serve --port 7777
 | `GET /v1/vms/ip` | `?path=/bundle` | `[Lease]` |
 | `POST /v1/vms/stop` | `{vm_path, timeout?}` | StopOutcome |
 
+When `VM4A_AUTH_TOKEN` is set, every endpoint except `GET /v1/health` requires `Authorization: Bearer <token>` and returns `401` otherwise. The server binds to `127.0.0.1` by default; only pass `--bind 0.0.0.0` together with a token.
+
+### Python SDK
+
 The Python SDK ([`sdk/python/`](sdk/python/)) is a stdlib-only wrapper (no `requests`/`httpx`):
 
 ```python
 from vm4a import Client
 
-c = Client()  # http://127.0.0.1:7777
+c = Client()  # http://127.0.0.1:7777, or Client(token="...") for bearer auth
 vm = c.spawn(name="dev", from_="ghcr.io/yourorg/python-dev:latest", wait_ssh=True)
-out = c.exec(vm.path, ["python3", "-c", "print(1+1)"])
-print(out.exit_code, out.stdout)
+out = c.run_code(vm.path, "python", "print(1+1)")
+print(out.exit_code, out.stdout)              # 0  "2\n"
+
+url = c.expose_port(vm.path, 8000).url        # http://192.168.64.7:8000
 ```
 
 `pip install vm4a` once it's published; before that, run from source via `PYTHONPATH=sdk/python/src`.
+
+### JavaScript / TypeScript SDK
+
+A dependency-free client ([`sdk/typescript/`](sdk/typescript/)) mirrors the Python API for Node 18+ (uses the built-in global `fetch`):
+
+```ts
+import { Client } from "vm4a";
+
+const c = new Client();                       // or new Client({ token: "..." })
+const vm = await c.spawn("dev", { from: "ghcr.io/yourorg/python-dev:latest", waitSsh: true });
+const out = await c.runCode(vm.path, "python", "print(1+1)");
+console.log(out.exit_code, out.stdout);       // 0  "2\n"
+
+const { url } = await c.exposePort(vm.path, 8000);
+```
+
+`npm install vm4a` once published; before that, `cd sdk/typescript && npm install && npm run build`. A worked agent loop is in [`sdk/typescript/examples/agent_loop.ts`](sdk/typescript/examples/agent_loop.ts).
+
+---
+
+## Cluster — scheduling across hosts
+
+A single Mac has finite cores. The cluster scheduler treats several Macs — each running `vm4a serve` — as one pool, and lands new VMs on the least-loaded node.
+
+```bash
+# On each worker Mac: serve on the LAN behind a shared token.
+export VM4A_AUTH_TOKEN=shared-secret
+vm4a serve --bind 0.0.0.0 --port 7777
+
+# On the controller: register the nodes once (stored at ~/.vm4a/cluster/<name>.json).
+vm4a cluster add mac-studio --url http://10.0.0.5:7777 --token shared-secret
+vm4a cluster add mac-mini   --url http://10.0.0.6:7777 --token shared-secret
+vm4a cluster list
+
+# Spawn on whichever node has the fewest running VMs.
+vm4a cluster spawn dev --from ghcr.io/yourorg/python-dev:latest --wait-ssh
+# → picks a node, returns {node, outcome: SpawnOutcome}
+
+# Target a specific node for follow-up work.
+vm4a cluster exec --node mac-studio /tmp/vm4a/dev -- python3 /work/step.py
+
+# Aggregate VM counts across every node.
+vm4a cluster status
+```
+
+| Subcommand | What it does |
+|---|---|
+| `cluster add <name> --url <u> [--token <t>]` | Register a remote `vm4a serve` node |
+| `cluster remove <name>` | Unregister a node |
+| `cluster list [--output json]` | List registered nodes + reachability |
+| `cluster spawn <name> [spawn flags]` | Spawn on the least-loaded reachable node |
+| `cluster exec --node <name> <vm> -- <cmd>` | Exec on a specific node's VM |
+| `cluster status [--output json]` | Aggregate VM counts across nodes |
+
+Scheduling is "least running VMs wins"; unreachable nodes are skipped. The registry is just JSON under `~/.vm4a/cluster/` — version it or template it for reproducible fleets.
+
+---
+
+## GitHub Action
+
+`action.yml` is a composite Action for **self-hosted Apple Silicon runners** (the Action builds + codesigns `vm4a` from the checked-out repo, then drives it). GitHub's hosted macOS runners are VMs and cannot nest Virtualization.framework, so a self-hosted M-series runner is required.
+
+The Action spawns a VM (pulling `from` or building from `image`), runs `command` inside it via `bash -lc`, captures the result, and — unless `cleanup: false` — stops and removes the VM when the job ends.
+
+```yaml
+jobs:
+  test-in-vm:
+    runs-on: [self-hosted, macos, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: everettjf/vm4a@main
+        id: vm
+        with:
+          from: ghcr.io/yourorg/python-dev:latest
+          name: ci-${{ github.run_id }}
+          command: "python3 -m pytest -q"      # run via `vm4a exec -- bash -lc`
+          allow-domains: pypi.org,github.com    # Linux egress allow-list
+          cleanup: "true"                       # stop + remove the VM at job end
+      - run: echo "exit=${{ steps.vm.outputs.exit-code }} ip=${{ steps.vm.outputs.ip }}"
+```
+
+| Input | Default | Notes |
+|---|---|---|
+| `command` *(required)* | — | Shell command run in the guest via `bash -lc` |
+| `from` / `image` | `""` | OCI ref to pull, or catalog id / path / URL to build (mutually exclusive) |
+| `name` | `ci` | Bundle name (`<storage>/<name>`) |
+| `os` | `linux` | `linux` or `macOS` |
+| `storage` | `/tmp/vm4a` | Parent directory for the bundle |
+| `wait-timeout` | `180` | Seconds to wait for SSH |
+| `exec-timeout` | `600` | Seconds the command may run |
+| `allow-domains` | `""` | Comma-separated Linux egress allow-list |
+| `cleanup` | `true` | Stop + delete the VM after the run |
+
+Outputs: `exit-code`, `stdout`, `ip`. The job fails if the in-guest command exits non-zero.
 
 ---
 
@@ -417,6 +560,26 @@ Bridged mode requires the CLI carry `com.apple.vm.networking`. The bundled entit
 
 > Back-compat: passing `--bridged-interface en0` without `--network` still implies bridged mode, matching the old CLI surface.
 
+### Egress allow-list (Linux guests)
+
+For runs that should reach only a known set of hosts (e.g. let an agent hit `pypi.org` and `github.com` but nothing else), apply an `nftables` allow-list inside the guest. Two ways in:
+
+```bash
+# At spawn time — applied automatically once SSH is up.
+vm4a spawn dev --from ghcr.io/yourorg/python-dev:latest --wait-ssh \
+    --allow-domains pypi.org,github.com
+
+# Or after the fact / to re-apply on a running guest.
+vm4a network guard /tmp/vm4a/dev --allow-domains pypi.org,github.com
+
+# Re-apply the previously saved policy (no --allow-domains needed).
+vm4a network guard /tmp/vm4a/dev
+```
+
+The policy is persisted to `<bundle>/egress.json`, so it survives reboots — re-run `network guard` with no arguments to reapply it. The guard resolves each domain to its IPs and writes an `nftables` ruleset that drops outbound traffic to anything else (DNS and loopback stay open). This is a Linux-guest feature; macOS guests are not affected.
+
+> Egress filtering hardens the *guest*, not the host. Combine it with `--network none` for fully offline runs, or `nat`/`bridged` + an allow-list when a task needs a few specific endpoints.
+
 ---
 
 ## Rosetta (x86 in Linux guests)
@@ -497,5 +660,7 @@ Branch on these without parsing stderr.
 | macOS guest stays black after install | Expected — it's at Setup Assistant. Open in VM4A.app to interact. |
 | `vm4a exec /macos-vm` returns "Connection refused" | macOS guest hasn't enabled Remote Login yet. Open in VM4A.app: System Settings → General → Sharing → Remote Login. |
 | Snapshot flags refused | Requires macOS 14+ host |
-| `vm4a serve` returns 401 | Set the same `VM4A_AUTH_TOKEN` on the client |
-| Bridged VM has no IP via `vm4a ip` | Bridged mode doesn't use Apple's DHCP server; pass `--host <ip>` |
+| `vm4a serve` returns 401 | Set the same `VM4A_AUTH_TOKEN` on the client (`GET /v1/health` stays open) |
+| Bridged VM has no IP via `vm4a ip` | Bridged mode doesn't use Apple's DHCP server; pass `--host <ip>` (also works with `expose-port --host`) |
+| `cluster spawn` skips a node | Node unreachable or token mismatch — check `vm4a cluster list` and the node's `VM4A_AUTH_TOKEN` |
+| `--allow-domains` has no effect | Egress guard is Linux-only and needs SSH up; macOS guests are unaffected |

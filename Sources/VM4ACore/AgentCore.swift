@@ -648,8 +648,15 @@ public func exposePort(options: ExposePortOptions) throws -> ExposeResult {
     guard options.port > 0, options.port <= 65535 else {
         throw VM4AError.message("port must be in 1…65535")
     }
-    let model = try loadModel(rootPath: URL(fileURLWithPath: options.vmPath, isDirectory: true))
-    let host = try resolveHost(model: model, override: options.hostOverride)
+    // A host override makes the bundle irrelevant — resolving the URL needs only
+    // the address, so skip loading the model (lets `--host` work without a bundle).
+    let host: String
+    if let override = options.hostOverride, !override.isEmpty {
+        host = override
+    } else {
+        let model = try loadModel(rootPath: URL(fileURLWithPath: options.vmPath, isDirectory: true))
+        host = try resolveHost(model: model, override: options.hostOverride)
+    }
     let url = "\(options.scheme)://\(host):\(options.port)"
     return ExposeResult(url: url, host: host, port: options.port, scheme: options.scheme)
 }

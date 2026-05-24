@@ -16,7 +16,7 @@ export class VM4AHTTPError extends Error {
   }
 }
 
-// Response shapes (camelCase, matching what `vm4a serve` emits).
+// Response shapes (snake_case, matching the JSON `vm4a serve` emits).
 
 export interface SpawnOutcome {
   id: string;
@@ -25,15 +25,15 @@ export interface SpawnOutcome {
   os: string;
   pid: number | null;
   ip: string | null;
-  sshReady: boolean;
+  ssh_ready: boolean;
 }
 
 export interface ExecResult {
-  exitCode: number;
+  exit_code: number;
   stdout: string;
   stderr: string;
-  durationMs: number;
-  timedOut: boolean;
+  duration_ms: number;
+  timed_out: boolean;
 }
 
 export interface ForkOutcome {

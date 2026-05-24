@@ -63,15 +63,16 @@ vm4a exec /tmp/vm4a/task-42 -- bash /work/agent_step.sh
 
 ---
 
-## 三种调用方式
+## 多种调用方式
 
 | 接入方式 | 适合场景 | 入口 |
 |---|---|---|
 | 🐚 **CLI** | shell 脚本、CI、手动调试 | `vm4a <command>` |
 | 🤖 **MCP** | Claude Code / Cursor / Cline 等支持 MCP 的 AI | `vm4a mcp`（stdio JSON-RPC） |
-| 🌐 **HTTP + Python SDK** | 自定义 Python harness、其他语言绑定 | `vm4a serve` + `pip install vm4a` |
+| 🌐 **HTTP + SDK** | 自定义 harness、各种语言绑定 | `vm4a serve` + Python（`pip install vm4a`）或 JS/TS（`sdk/typescript`） |
+| 🛰 **Cluster** | 多台 Mac 当一个池子 | `vm4a cluster add/spawn/exec` 调度远程 `vm4a serve` 节点 |
 
-三种接入背后都是同一组 agent 原语：`spawn`、`exec`、`cp`、`fork`、`reset`、`list`、`ip`、`stop`。哪种用着顺手就用哪种。
+所有接入背后都是同一组 agent 原语：`spawn`、`run-code`、`expose-port`、`exec`、`cp`、`fork`、`reset`、`list`、`ip`、`stop`。哪种用着顺手就用哪种。逐命令参考见 [**Usage.zh-CN.md**](Usage.zh-CN.md)。
 
 ---
 
@@ -140,6 +141,8 @@ cp ./.build/release/vm4a /usr/local/bin/
 | 自己改 VM4A | [**Developer.zh-CN.md**](Developer.zh-CN.md) —— 仓库结构、架构、构建、测试、发布流程 |
 | 看版本变更 | [**CHANGELOG.md**](CHANGELOG.md) |
 | 用 Python SDK | [**sdk/python/README.md**](sdk/python/README.md) |
+| 用 JS/TS SDK | [**sdk/typescript/README.md**](sdk/typescript/README.md) |
+| 从 CI 跑 VM（GitHub Action） | [**action.yml**](action.yml) —— 自托管 Apple Silicon runner |
 | 拉 / 重建模板镜像 | [**templates/README.md**](templates/README.md) |
 
 > 在用 **Claude Code**？仓库里自带一个 skill：`.claude/skills/vm4a-cli/SKILL.md`，会教 Claude 怎么使用每个子命令。

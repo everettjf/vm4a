@@ -606,6 +606,9 @@ public func loadModel(rootPath: URL) throws -> VMModel {
     let configURL = rootPath.appending(path: "config.json")
     let stateURL = rootPath.appending(path: "state.json")
 
+    guard FileManager.default.fileExists(atPath: configURL.path(percentEncoded: false)) else {
+        throw VM4AError.notFound("VM bundle at \(rootPath.path(percentEncoded: false)) (no config.json)")
+    }
     let configData = try Data(contentsOf: configURL)
     let config = try JSONDecoder().decode(VMConfigModel.self, from: configData)
 
