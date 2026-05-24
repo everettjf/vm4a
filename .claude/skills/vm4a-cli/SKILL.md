@@ -38,6 +38,21 @@ Before running anything:
    ```
    Bridged networking and Rosetta share need the CLI entitlements file
    specifically — not the App one.
+
+   **macOS 26 (Tahoe) gotcha:** `com.apple.vm.networking` is a *restricted*
+   entitlement. Ad-hoc signing (`--sign -`) a binary that carries it makes
+   **AMFI SIGKILL the process at launch** — every `vm4a` command dies with no
+   output (exit `137`). If that happens, re-sign with an entitlements file that
+   drops `com.apple.vm.networking` (NAT-only; keeps `com.apple.security.virtualization`):
+   ```bash
+   cp Sources/VM4ACLI/VM4ACLI.entitlements /tmp/nat.entitlements
+   /usr/libexec/PlistBuddy -c "Delete :com.apple.vm.networking" /tmp/nat.entitlements
+   codesign --force --sign - --entitlements /tmp/nat.entitlements ./.build/debug/vm4a
+   ./.build/debug/vm4a --version   # must print, not get killed
+   ```
+   Bridged mode then needs a real Apple Developer signing identity (ad-hoc
+   cannot grant the managed entitlement). NAT covers spawn/exec/run-code/
+   expose-port/snapshots/OCI.
 3. For bridged mode: `vm4a network list` should print at least one
    interface. If empty, re-check codesigning.
 
@@ -200,7 +215,11 @@ entries), not O(disk image size).
 
 ## When the user is stuck
 
-- `run` silently exits: check `.vm4a-run.log` in the bundle root.
+- **Every `vm4a` command exits with code `137` / no output (macOS 26):** AMFI
+  killed the ad-hoc-signed binary because of the restricted
+  `com.apple.vm.networking` entitlement. Re-sign NAT-only (see Prerequisites #2).
+- `run` silently exits (but the binary itself runs): check `.vm4a-run.log` in
+  the bundle root.
 - "No bridged interfaces available": CLI is not signed with
   `com.apple.vm.networking`. Re-run the codesign command from the top.
 - "Rosetta is not supported on this host": CPU doesn't expose VMX for

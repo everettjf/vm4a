@@ -99,6 +99,19 @@ cp ./.build/release/vm4a /usr/local/bin/
 
 > ⚠️ The CLI **must** be codesigned with `Sources/VM4ACLI/VM4ACLI.entitlements`. Bridged networking and Rosetta paths silently fail without it.
 
+> ⚠️ **macOS 26 (Tahoe) + ad-hoc signing.** `com.apple.vm.networking` (in the entitlements file, for bridged mode) is a *restricted* entitlement. On macOS 26, ad-hoc signing (`--sign -`) a binary that carries it makes **AMFI kill the process at launch** — every `vm4a` invocation dies with no output (exit `137`/SIGKILL). Two ways out:
+>
+> - **NAT-only (no Apple Developer account needed):** sign with an entitlements file that drops `com.apple.vm.networking`, keeping just `com.apple.security.virtualization` (+ `network.client`/`network.server`). NAT VMs, `spawn`/`exec`/`run-code`/`expose-port`, snapshots, and OCI all work; only `--network bridged` is unavailable.
+>   ```bash
+>   # NAT-only entitlements: copy the file and drop the restricted bridged key
+>   cp Sources/VM4ACLI/VM4ACLI.entitlements /tmp/nat.entitlements
+>   /usr/libexec/PlistBuddy -c "Delete :com.apple.vm.networking" /tmp/nat.entitlements
+>   codesign --force --sign - --entitlements /tmp/nat.entitlements ./.build/release/vm4a
+>   ```
+> - **Bridged networking:** sign with a real Apple Developer identity (`--sign "Developer ID Application: …"`) provisioned to carry the managed `com.apple.vm.networking` entitlement; ad-hoc cannot grant it.
+>
+> Verify the binary actually runs after signing: `./.build/release/vm4a --version` should print the version, not get killed.
+
 </details>
 
 **Requirements:** Apple Silicon Mac (M1+), macOS 13+ (snapshots need macOS 14+).

@@ -99,6 +99,19 @@ cp ./.build/release/vm4a /usr/local/bin/
 
 > ⚠️ CLI **必须**用 `Sources/VM4ACLI/VM4ACLI.entitlements` 签名。bridged 网络和 Rosetta 路径在没签名时会静默失败。
 
+> ⚠️ **macOS 26（Tahoe）+ ad-hoc 签名。** entitlements 文件里的 `com.apple.vm.networking`（bridged 模式用）是**受限** entitlement。在 macOS 26 上，用 ad-hoc 方式（`--sign -`）给带这个 entitlement 的二进制签名，会让 **AMFI 在启动时直接杀掉进程** —— 每次执行 `vm4a` 都没有任何输出就退出（退出码 `137`/SIGKILL）。两条出路：
+>
+> - **只用 NAT（不需要 Apple 开发者账号）：** 用一份去掉 `com.apple.vm.networking` 的 entitlements 签名，只保留 `com.apple.security.virtualization`（+ `network.client`/`network.server`）。NAT 虚拟机、`spawn`/`exec`/`run-code`/`expose-port`、快照、OCI 全都正常，只是用不了 `--network bridged`。
+>   ```bash
+>   # 只含 NAT 的 entitlements：复制原文件，删掉受限的 bridged key
+>   cp Sources/VM4ACLI/VM4ACLI.entitlements /tmp/nat.entitlements
+>   /usr/libexec/PlistBuddy -c "Delete :com.apple.vm.networking" /tmp/nat.entitlements
+>   codesign --force --sign - --entitlements /tmp/nat.entitlements ./.build/release/vm4a
+>   ```
+> - **需要 bridged 网络：** 用真实的 Apple 开发者签名身份（`--sign "Developer ID Application: …"`）签名，且该身份已被授权携带受管的 `com.apple.vm.networking` entitlement；ad-hoc 授不了这个权限。
+>
+> 签完务必验证二进制能跑：`./.build/release/vm4a --version` 应打印版本号，而不是被杀掉。
+
 </details>
 
 **要求：** Apple Silicon Mac（M1+），macOS 13+（快照功能要 macOS 14+）。

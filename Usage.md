@@ -651,6 +651,7 @@ Branch on these without parsing stderr.
 
 | Symptom | Likely cause / fix |
 |---|---|
+| Every `vm4a` command exits `137` with no output (macOS 26) | AMFI killed the ad-hoc-signed binary over the restricted `com.apple.vm.networking` entitlement — re-sign NAT-only (see [Install → build from source](README.md#install)) |
 | `run` exits silently | Check `<bundle>/.vm4a-run.log` |
 | `network list` is empty | CLI not signed with `com.apple.vm.networking` |
 | `ssh` / `ip` returns nothing | VM still booting / DHCP'ing — wait 10–30 s |

@@ -651,6 +651,7 @@ CLI 创建的 bundle 能在 GUI 里用，反之亦然。
 
 | 现象 | 可能原因 / 修复 |
 |---|---|
+| 每个 `vm4a` 命令都退出码 `137` 且无输出（macOS 26） | AMFI 因受限的 `com.apple.vm.networking` entitlement 杀掉了 ad-hoc 签名的二进制 —— 改用只含 NAT 的 entitlements 重新签名（见 [安装 → 源码编译](README.zh-CN.md#安装)） |
 | `run` 静默退出 | 看 `<bundle>/.vm4a-run.log` |
 | `network list` 返回空 | CLI 没签 `com.apple.vm.networking` entitlement |
 | `ssh` / `ip` 没结果 | VM 还在启动 / DHCP 中，等 10–30 秒 |
