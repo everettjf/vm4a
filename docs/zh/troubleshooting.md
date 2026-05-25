@@ -2,7 +2,7 @@
 title: 故障排查
 layout: default
 parent: 中文文档
-nav_order: 3
+nav_order: 4
 description: "VM4A 常见现象与解决办法。"
 ---
 
