@@ -46,7 +46,7 @@ vm4a run-code /tmp/vm4a/dev --lang python --code 'print(1 + 1)'
 
 - **New here?** → [Getting started](getting-started) installs `vm4a` and boots your first VM.
 - **Learning by doing?** → The [Tutorials](tutorials) walk every feature, start to finish.
-- **Want end-to-end recipes?** → The [`Cookbook`](https://github.com/everettjf/vm4a/blob/main/Cookbook.md) (also linked in the sidebar).
+- **Want end-to-end recipes?** → The [Cookbook](cookbook) (recipes organised by goal).
 - **Looking up a flag or JSON shape?** → The repo's [`Usage.md`](https://github.com/everettjf/vm4a/blob/main/Usage.md) is the per-command reference.
 - **Stuck?** → [Troubleshooting](troubleshooting).
 
