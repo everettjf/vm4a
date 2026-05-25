@@ -44,6 +44,7 @@ vm4a run-code /tmp/vm4a/dev --lang python --code 'print(1 + 1)'
 
 - **第一次用？** → [快速上手](getting-started)：安装 `vm4a` 并启动你的第一台 VM。
 - **想边做边学？** → [教程](tutorials)：每个功能从头到尾走一遍。
+- **想要端到端实操？** → [`Cookbook（中文）`](https://github.com/everettjf/vm4a/blob/main/Cookbook.zh-CN.md)（侧栏也有入口）。
 - **查 flag 或 JSON 字段？** → 仓库里的 [`Usage.zh-CN.md`](https://github.com/everettjf/vm4a/blob/main/Usage.zh-CN.md) 是逐命令参考。
 - **卡住了？** → [故障排查](troubleshooting)。
 

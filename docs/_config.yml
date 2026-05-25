@@ -28,6 +28,14 @@ aux_links:
     - "https://github.com/everettjf/vm4a"
 aux_links_new_tab: true
 
+# Extra entries in the left nav. The Cookbook (end-to-end recipes) is a large
+# living doc kept at the repo root, so link to it rather than duplicate it here.
+nav_external_links:
+  - title: "Cookbook ↗"
+    url: "https://github.com/everettjf/vm4a/blob/main/Cookbook.md"
+  - title: "Cookbook（中文）↗"
+    url: "https://github.com/everettjf/vm4a/blob/main/Cookbook.zh-CN.md"
+
 # Footer / edit links
 back_to_top: true
 back_to_top_text: "Back to top"
