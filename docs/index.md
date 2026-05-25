@@ -14,6 +14,7 @@ Spin up isolated **macOS or Linux** VMs on Apple Silicon for AI agents to safely
 
 [Get started](getting-started){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
 [Start the tutorials](tutorials){: .btn .fs-5 .mb-4 .mb-md-0 .mr-2 }
+[中文文档](zh/){: .btn .fs-5 .mb-4 .mb-md-0 .mr-2 }
 [View on GitHub](https://github.com/everettjf/vm4a){: .btn .fs-5 .mb-4 .mb-md-0 }
 
 ---
