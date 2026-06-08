@@ -349,6 +349,44 @@ struct CoreTests {
     }
 
     @Test
+    func selectLeasesMatchesByMACAndDUID() throws {
+        let leases = parseDHCPLeases("""
+        {
+        \tname=guest-typed1
+        \tip_address=192.168.64.20
+        \thw_address=1,a:1b:2c:3d:4e:5f
+        }
+        {
+        \tname=guest-duid
+        \tip_address=192.168.64.21
+        \thw_address=ff,f1:f5:dd:7f:0:2:0:0:ab:11:0a:1b:2c:3d:4e:60
+        }
+        {
+        \tname=stranger
+        \tip_address=192.168.64.22
+        \thw_address=1,99:88:77:66:55:44
+        }
+        """)
+
+        // Type-1 raw MAC: exact match, only the owning lease comes back.
+        let raw = selectLeases(leases, macs: ["0A:1B:2C:3D:4E:5F"], name: "n")
+        #expect(raw.map(\.ipAddress) == ["192.168.64.20"])
+
+        // DUID client-id: MAC is the trailing 6 bytes, suffix match.
+        let duid = selectLeases(leases, macs: ["0a:1b:2c:3d:4e:60"], name: "n")
+        #expect(duid.map(\.ipAddress) == ["192.168.64.21"])
+
+        // Known MAC with no matching lease → empty, NOT the whole table.
+        #expect(selectLeases(leases, macs: ["de:ad:be:ef:00:01"], name: "n").isEmpty)
+
+        // Legacy bundle (no MAC) falls back to hostname.
+        #expect(selectLeases(leases, macs: [], name: "stranger").map(\.ipAddress) == ["192.168.64.22"])
+
+        // Legacy bundle, no name match → keeps old "return everything" behavior.
+        #expect(selectLeases(leases, macs: [], name: "nope").count == 3)
+    }
+
+    @Test
     func sha256MatchesKnownVectors() throws {
         // empty string
         #expect(sha256Hex(of: Data()) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")

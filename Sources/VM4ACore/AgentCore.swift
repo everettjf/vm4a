@@ -140,12 +140,12 @@ public func createBundle(
     )
     let normalizedImagePath = options.imagePath.map(normalizePath)
 
-    let network: [VMModelFieldNetworkDevice]
+    let rawNetwork: [VMModelFieldNetworkDevice]
     switch options.networkMode {
     case .none:
-        network = []
+        rawNetwork = []
     case .nat:
-        network = config.networkDevices  // default NAT from VMConfigModel.defaults
+        rawNetwork = config.networkDevices  // default NAT from VMConfigModel.defaults
     case .bridged:
         let interfaces = availableBridgedInterfaces()
         if interfaces.isEmpty {
@@ -156,12 +156,16 @@ public func createBundle(
                 let available = interfaces.map { $0.identifier }.joined(separator: ", ")
                 throw VM4AError.notFound("Bridged interface '\(bridged)'. Available: \(available)")
             }
-            network = [.init(type: .Bridged, identifier: bridged)]
+            rawNetwork = [.init(type: .Bridged, identifier: bridged)]
         } else {
             // auto-pick the first interface
-            network = [.init(type: .Bridged, identifier: interfaces[0].identifier)]
+            rawNetwork = [.init(type: .Bridged, identifier: interfaces[0].identifier)]
         }
     }
+
+    // Assign a fixed, persisted MAC to each NIC so `vm4a ip` / `list` can map a
+    // DHCP lease back to this exact bundle instead of guessing by hostname.
+    let network = networkDevicesWithFreshMACs(rawNetwork)
 
     var rosettaWarning: String?
     let rosettaField: VMModelFieldRosetta?
@@ -189,7 +193,8 @@ public func createBundle(
         storageDevices = config.storageDevices
     }
 
-    if options.networkMode != .nat || rosettaField != nil || storageDevices.count != config.storageDevices.count {
+    // Always rebuild: even default NAT now carries a persisted per-NIC MAC.
+    do {
         config = VMConfigModel(
             type: config.type,
             name: config.name,

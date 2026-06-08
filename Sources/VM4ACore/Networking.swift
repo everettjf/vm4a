@@ -66,10 +66,37 @@ public func readDHCPLeasesFile() -> [DHCPLease] {
     return []
 }
 
+/// Pick the lease(s) belonging to a bundle, given all host leases plus the
+/// bundle's persisted NIC MACs and DHCP-visible name. Pure (no I/O) so it can
+/// be unit-tested. Matching order:
+///   1. By MAC — the lease's hardware/client id either equals the fixed MAC
+///      (type-1 hw_address) or ends in it (DUID-LL / DUID-LLT carry the MAC as
+///      their trailing 6 bytes).
+///   2. By DHCP hostname (legacy bundles created before MACs were persisted).
+///   3. Nothing — an identifiable bundle (has a MAC) with no lease yet returns
+///      []; a MAC-less legacy bundle keeps the old "return everything" behavior
+///      so its callers don't regress.
+public func selectLeases(_ leases: [DHCPLease], macs: [String], name: String) -> [DHCPLease] {
+    let normalizedMACs = macs.map(normalizeMAC)
+    if !normalizedMACs.isEmpty {
+        let byMAC = leases.filter { lease in
+            normalizedMACs.contains { mac in
+                lease.hardwareAddress == mac || lease.hardwareAddress.hasSuffix(":" + mac)
+            }
+        }
+        if !byMAC.isEmpty { return byMAC }
+    }
+
+    let byName = leases.filter { $0.name == name }
+    if !byName.isEmpty { return byName }
+
+    return normalizedMACs.isEmpty ? leases : []
+}
+
 public func findLeasesForBundle(_ model: VMModel) -> [DHCPLease] {
-    let leases = readDHCPLeasesFile()
-    let needle = model.config.name
-    let matches = leases.filter { $0.name == needle }
-    if !matches.isEmpty { return matches }
-    return leases
+    selectLeases(
+        readDHCPLeasesFile(),
+        macs: model.config.networkDevices.compactMap { $0.macAddress },
+        name: model.config.name
+    )
 }

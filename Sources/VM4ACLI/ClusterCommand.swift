@@ -148,7 +148,7 @@ struct ClusterExecCommand: AsyncParsableCommand {
     @Flag(name: .long, help: "Pretty-print JSON output")
     var pretty: Bool = false
 
-    @Argument(parsing: .captureForPassthrough, help: "Command and arguments to run in the VM")
+    @Argument(parsing: .postTerminator, help: "Command and arguments to run in the VM (after `--`)")
     var command: [String] = []
 
     mutating func run() async throws {

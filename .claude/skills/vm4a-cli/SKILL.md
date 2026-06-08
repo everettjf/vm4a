@@ -50,9 +50,21 @@ Before running anything:
    codesign --force --sign - --entitlements /tmp/nat.entitlements ./.build/debug/vm4a
    ./.build/debug/vm4a --version   # must print, not get killed
    ```
-   Bridged mode then needs a real Apple Developer signing identity (ad-hoc
-   cannot grant the managed entitlement). NAT covers spawn/exec/run-code/
-   expose-port/snapshots/OCI.
+   Ad-hoc NAT covers spawn/exec/cp/run-code/expose-port/OCI — but NOT bridged
+   networking and NOT snapshots.
+   **Snapshots on macOS 26 (verified):** `saveMachineStateTo` is gated on
+   **hardened runtime + a real signing identity**. Ad-hoc signing fails with
+   `VZErrorSave "permission denied"` (so `snapshot save`, `run --save-on-stop`,
+   and `reset` all fail). `validateSaveRestoreSupport()` is YES — it's purely a
+   signing issue. Re-sign with `--options runtime` + an Apple Development /
+   Developer ID identity:
+   ```bash
+   codesign --force --options runtime \
+     --sign "Apple Development: YOUR NAME (TEAMID)" \
+     --entitlements /tmp/nat.entitlements ./.build/debug/vm4a
+   ```
+   Bridged mode additionally needs an identity *provisioned* for the managed
+   `com.apple.vm.networking` entitlement (ad-hoc cannot grant it).
 3. For bridged mode: `vm4a network list` should print at least one
    interface. If empty, re-check codesigning.
 
@@ -68,6 +80,9 @@ Before running anything:
 | Copy a file guest→host | `vm4a cp /path/to/bundle :/var/log/syslog ./syslog.txt` |
 | Fork a bundle, auto-start, wait for SSH | `vm4a fork SRC DST --auto-start --from-snapshot clean.vzstate --wait-ssh` |
 | Reset to a saved snapshot for retry | `vm4a reset /path/to/bundle --from clean.vzstate --wait-ip` |
+| Save a running VM as a named snapshot (stops it) | `vm4a snapshot save /path/to/bundle clean` |
+| Restore a VM to a named snapshot (~1s) | `vm4a restore /path/to/bundle clean` (alias for `vm4a snapshot restore`) |
+| List / delete named snapshots | `vm4a snapshot list /path/to/bundle [--output json]`, `vm4a snapshot rm /path/to/bundle clean` |
 
 **Classic lifecycle:**
 
@@ -194,9 +209,23 @@ entries), not O(disk image size).
 - **`vm4a cp` uses `:` to mark guest paths**, not `host:` like docker cp. So
   `./local.txt :/work/file.txt` is host→guest. Both sides being host or
   both being guest is rejected.
-- **`vm4a fork` re-randomises `MachineIdentifier` automatically.** Don't
-  hand-roll a clone+identity flow — `fork` is what `clone` should have been
-  for agent loops, with optional `--auto-start` and `--from-snapshot`.
+- **`vm4a fork` re-randomises `MachineIdentifier` AND the NIC MAC automatically.**
+  Don't hand-roll a clone+identity flow — `fork` is what `clone` should have been
+  for agent loops, with optional `--auto-start` and `--from-snapshot`. (Re-randomising
+  the MAC is what stops parallel forks from colliding on the NAT lease table.)
+- **`vm4a ip` matches the lease by the bundle's persisted NIC MAC**, not by
+  hostname. New bundles store a fixed MAC in `config.json`; if no lease matches
+  it yet, `ip` returns empty / exit 1 (it no longer dumps the whole lease table).
+  Legacy bundles without a stored MAC still fall back to hostname matching.
+- **`vm4a snapshot save/restore/list/rm` (+ top-level `vm4a restore`) are the
+  simple path** — named `.vzstate` snapshots stored in `<bundle>/.vm4a-snapshots/`,
+  no path juggling. `save` captures the running VM then stops it (it signals the
+  worker via SIGUSR1); `restore` reboots to that state in ~1s. Prefer these over
+  hand-managing `run --save-on-stop` / `run --restore` / `reset` paths. **Needs
+  the hardened-runtime + real-identity signing** (see Prerequisites #2).
+- **`vm4a exec` parses its options in any position** (the command goes after
+  `--`): both `vm4a exec /b --output json -- cmd` and `vm4a exec --output json /b -- cmd`
+  work. Same for `cluster exec` and `ssh` extra args.
 - **`vm4a reset` requires a `.vzstate` file**, which means macOS 14+. On
   older hosts the agent has to fall back to `clone` + reinstall.
 - **Guest agent is a scaffold.** Only `ping` is implemented. Don't promise
@@ -228,6 +257,10 @@ entries), not O(disk image size).
   (a PAT for GHCR, a Docker token for Docker Hub).
 - `ssh` hangs: VM hasn't DHCP'd yet (`vm4a ip` returns empty). Wait 10-30s
   after `vm4a run` for first-boot initialization.
+- `snapshot save` / `--save-on-stop` / `reset` fail with `VZErrorSave
+  "permission denied"` (macOS 26): the binary is ad-hoc signed. VZ state save
+  needs hardened runtime + a real identity — re-sign with `--options runtime`
+  and an Apple Development / Developer ID identity (see Prerequisites #2).
 
 ## When NOT to use the CLI
 
@@ -239,6 +272,12 @@ Redirect to the GUI app for:
 ## What's new vs older guides
 
 Most recent:
+
+**Named snapshots:**
+- `snapshot save NAME` / `restore NAME` / `snapshot list` / `snapshot rm`, plus
+  top-level `vm4a restore` — named `.vzstate` snapshots stored inside the bundle,
+  no manual path juggling. Requires hardened-runtime + real-identity signing on
+  macOS 26 (see Prerequisites #2).
 
 **v2.0 P1 — MCP server:**
 - `mcp` (stdio JSON-RPC 2.0 server; register in `.mcp.json` to expose

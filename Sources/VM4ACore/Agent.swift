@@ -273,6 +273,21 @@ public func parseCopyEndpoint(_ raw: String) -> CopyEndpoint {
 
 // MARK: - VM identity helpers
 
+/// A fresh locally-administered MAC, e.g. "0a:1b:2c:3d:4e:5f". Persisted in
+/// config.json so the host can map DHCP leases back to a specific bundle.
+public func randomLocallyAdministeredMAC() -> String {
+    VZMACAddress.randomLocallyAdministered().string
+}
+
+/// Return a copy of `devices` with every device assigned a fresh MAC. Used at
+/// create time and on every fork so forked bundles never share a MAC (which
+/// would collide on the NAT and cross-wire DHCP leases).
+public func networkDevicesWithFreshMACs(_ devices: [VMModelFieldNetworkDevice]) -> [VMModelFieldNetworkDevice] {
+    devices.map {
+        VMModelFieldNetworkDevice(type: $0.type, identifier: $0.identifier, macAddress: randomLocallyAdministeredMAC())
+    }
+}
+
 /// Re-randomize a VM bundle's MachineIdentifier file so a clone boots as a
 /// distinct machine. Caller should make sure the VM is not running.
 public func reidentifyVM(model: VMModel) throws {
@@ -283,6 +298,28 @@ public func reidentifyVM(model: VMModel) throws {
     case .macOS:
         let data = VZMacMachineIdentifier().dataRepresentation
         try data.write(to: model.machineIdentifierURL)
+    }
+
+    // Re-randomize NIC MACs too, then rewrite config.json. Two forks of the
+    // same golden bundle must not share a MAC, or their DHCP leases collide.
+    let refreshed = networkDevicesWithFreshMACs(model.config.networkDevices)
+    if !refreshed.isEmpty {
+        let cfg = model.config
+        let updated = VMConfigModel(
+            type: cfg.type,
+            name: cfg.name,
+            remark: cfg.remark,
+            cpu: cfg.cpu,
+            memory: cfg.memory,
+            graphicsDevices: cfg.graphicsDevices,
+            storageDevices: cfg.storageDevices,
+            networkDevices: refreshed,
+            pointingDevices: cfg.pointingDevices,
+            audioDevices: cfg.audioDevices,
+            directorySharingDevices: cfg.directorySharingDevices,
+            rosetta: cfg.rosetta
+        )
+        try writeJSON(updated, to: model.configURL)
     }
 }
 

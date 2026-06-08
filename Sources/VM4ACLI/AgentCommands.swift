@@ -205,7 +205,7 @@ struct ExecCommand: ParsableCommand {
     @Option(name: .long, help: "Append a session event to <bundle>/.vm4a-sessions/<id>.jsonl")
     var session: String?
 
-    @Argument(parsing: .captureForPassthrough, help: "Command and arguments to run in the VM")
+    @Argument(parsing: .postTerminator, help: "Command and arguments to run in the VM (after `--`)")
     var command: [String] = []
 
     mutating func run() throws {

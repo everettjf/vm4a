@@ -285,32 +285,42 @@ public struct VMModelFieldNetworkDevice: Codable {
 
     public let type: DeviceType
     public let identifier: String?
+    /// Fixed, locally-administered MAC persisted in config.json so the host
+    /// can map a DHCP lease back to this exact bundle. Older bundles omit it
+    /// (nil) and fall back to hostname-based lease matching.
+    public let macAddress: String?
 
-    public init(type: DeviceType, identifier: String? = nil) {
+    public init(type: DeviceType, identifier: String? = nil, macAddress: String? = nil) {
         self.type = type
         self.identifier = identifier
+        self.macAddress = macAddress
     }
 
     public static func `default`() -> Self {
         .init(type: .NAT)
     }
 
-    enum CodingKeys: String, CodingKey { case type, identifier }
+    enum CodingKeys: String, CodingKey { case type, identifier, macAddress }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.type = try c.decode(DeviceType.self, forKey: .type)
         self.identifier = try c.decodeIfPresent(String.self, forKey: .identifier)
+        self.macAddress = try c.decodeIfPresent(String.self, forKey: .macAddress)
     }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(type, forKey: .type)
         try c.encodeIfPresent(identifier, forKey: .identifier)
+        try c.encodeIfPresent(macAddress, forKey: .macAddress)
     }
 
     func createConfiguration() throws -> VZNetworkDeviceConfiguration? {
         let dev = VZVirtioNetworkDeviceConfiguration()
+        if let macAddress, let vzMAC = VZMACAddress(string: macAddress) {
+            dev.macAddress = vzMAC
+        }
         switch type {
         case .NAT:
             dev.attachment = VZNATNetworkDeviceAttachment()
@@ -589,6 +599,19 @@ public struct VMModel {
     public var hardwareModelURL: URL { rootPath.appending(path: "HardwareModel") }
     public var auxiliaryStorageURL: URL { rootPath.appending(path: "AuxiliaryStorage") }
     public var efiVariableStoreURL: URL { rootPath.appending(path: "NVRAM") }
+
+    /// Named VZ snapshots live here as `<name>.vzstate`.
+    public var snapshotsDirURL: URL { rootPath.appending(path: ".vm4a-snapshots") }
+    public func snapshotURL(name: String) -> URL {
+        snapshotsDirURL.appending(path: "\(name).vzstate")
+    }
+    /// On-demand snapshot channel: `vm4a snapshot save` writes the target
+    /// `.vzstate` path here and signals the worker with SIGUSR1; the worker
+    /// saves to it, then stops. See `runVM`.
+    public var snapshotRequestURL: URL { rootPath.appending(path: ".vm4a-snapshot-request") }
+    /// Where the worker records why an on-demand snapshot failed, so the CLI
+    /// can surface the real reason instead of a generic timeout.
+    public var snapshotErrorURL: URL { rootPath.appending(path: ".vm4a-snapshot-error") }
 }
 
 func jsonEncoder() -> JSONEncoder {
@@ -908,6 +931,40 @@ public func runVM(model: VMModel, options: RunOptions) throws {
     sigtermSource.setEventHandler(handler: requestStop)
     sigintSource.resume()
     sigtermSource.resume()
+
+    // On-demand snapshot: `vm4a snapshot save` writes the target .vzstate path
+    // into the request file and sends SIGUSR1. Save to that path, then stop.
+    let snapshotRequestURL = model.snapshotRequestURL
+    let snapshotErrorURL = model.snapshotErrorURL
+    signal(SIGUSR1, SIG_IGN)
+    let sigusr1Source = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: vmQueue)
+    let onSnapshot: @Sendable () -> Void = {
+        guard #available(macOS 14.0, *),
+              let raw = try? String(contentsOf: snapshotRequestURL, encoding: .utf8) else {
+            vmBox.vm.stop { _ in }
+            return
+        }
+        let targetURL = URL(fileURLWithPath: raw.trimmingCharacters(in: .whitespacesAndNewlines))
+        // On failure, record the reason so the CLI can show it; on success the
+        // VM saves and then stops (the run loop exits via the delegate).
+        vmBox.vm.pause { pauseResult in
+            if case let .failure(err) = pauseResult {
+                try? Data("\(err.localizedDescription)".utf8).write(to: snapshotErrorURL)
+                try? FileManager.default.removeItem(at: snapshotRequestURL)
+                return
+            }
+            vmBox.vm.saveMachineStateTo(url: targetURL) { saveError in
+                if let saveError {
+                    try? Data("\(saveError.localizedDescription)".utf8).write(to: snapshotErrorURL)
+                    stopBox.setError(saveError)
+                }
+                try? FileManager.default.removeItem(at: snapshotRequestURL)
+                vmBox.vm.stop { _ in }
+            }
+        }
+    }
+    sigusr1Source.setEventHandler(handler: onSnapshot)
+    sigusr1Source.resume()
 
     try vmQueueStart(virtualMachine: virtualMachine, queue: vmQueue, options: options, osType: model.config.type)
 

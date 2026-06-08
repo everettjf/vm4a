@@ -52,6 +52,8 @@ struct VM4ACLI: AsyncParsableCommand {
             ListCommand.self,
             RunCommand.self,
             StopCommand.self,
+            SnapshotCommand.self,
+            RestoreCommand.self,
             CloneCommand.self,
             NetworkCommand.self,
             ImageCommand.self,
@@ -646,7 +648,7 @@ struct SSHCommand: ParsableCommand {
     @Option(name: .long, help: "Override target IP")
     var host: String?
 
-    @Argument(parsing: .captureForPassthrough, help: "Extra arguments passed to ssh")
+    @Argument(parsing: .postTerminator, help: "Extra ssh args / remote command (after `--`)")
     var extra: [String] = []
 
     mutating func run() throws {

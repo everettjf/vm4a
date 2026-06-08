@@ -91,26 +91,40 @@ brew install --cask vm4a       # GUI (drag-install)
 git clone https://github.com/everettjf/vm4a.git
 cd vm4a
 swift build -c release
-codesign --force --sign - \
-    --entitlements Sources/VM4ACLI/VM4ACLI.entitlements \
-    ./.build/release/vm4a
+
+# Codesign NAT-only — works on every macOS, including 26 (Tahoe).
+cp Sources/VM4ACLI/VM4ACLI.entitlements /tmp/nat.entitlements
+/usr/libexec/PlistBuddy -c "Delete :com.apple.vm.networking" /tmp/nat.entitlements
+codesign --force --sign - --entitlements /tmp/nat.entitlements ./.build/release/vm4a
+
+./.build/release/vm4a --version    # must print a version, not get killed
 cp ./.build/release/vm4a /usr/local/bin/
 ```
 
-> ⚠️ The CLI **must** be codesigned with `Sources/VM4ACLI/VM4ACLI.entitlements`. Bridged networking and Rosetta paths silently fail without it.
-
-> ⚠️ **macOS 26 (Tahoe) + ad-hoc signing.** `com.apple.vm.networking` (in the entitlements file, for bridged mode) is a *restricted* entitlement. On macOS 26, ad-hoc signing (`--sign -`) a binary that carries it makes **AMFI kill the process at launch** — every `vm4a` invocation dies with no output (exit `137`/SIGKILL). Two ways out:
+> ⚠️ The CLI **must** be codesigned, or the virtualization paths fail silently.
+> The command above signs **NAT-only** (drops the restricted `com.apple.vm.networking`
+> key) on purpose: it covers NAT VMs, `spawn`/`exec`/`cp`/`run-code`/`expose-port`,
+> and OCI. It does **not** cover `--network bridged` or **snapshots** — see below.
 >
-> - **NAT-only (no Apple Developer account needed):** sign with an entitlements file that drops `com.apple.vm.networking`, keeping just `com.apple.security.virtualization` (+ `network.client`/`network.server`). NAT VMs, `spawn`/`exec`/`run-code`/`expose-port`, snapshots, and OCI all work; only `--network bridged` is unavailable.
->   ```bash
->   # NAT-only entitlements: copy the file and drop the restricted bridged key
->   cp Sources/VM4ACLI/VM4ACLI.entitlements /tmp/nat.entitlements
->   /usr/libexec/PlistBuddy -c "Delete :com.apple.vm.networking" /tmp/nat.entitlements
->   codesign --force --sign - --entitlements /tmp/nat.entitlements ./.build/release/vm4a
->   ```
-> - **Bridged networking:** sign with a real Apple Developer identity (`--sign "Developer ID Application: …"`) provisioned to carry the managed `com.apple.vm.networking` entitlement; ad-hoc cannot grant it.
+> **Why not just sign with the full entitlements file?** On **macOS 26 (Tahoe)**,
+> ad-hoc signing (`--sign -`) a binary carrying the restricted
+> `com.apple.vm.networking` entitlement makes **AMFI kill it at launch** — every
+> `vm4a` command exits `137`/SIGKILL with no output. NAT-only signing avoids that.
 >
-> Verify the binary actually runs after signing: `./.build/release/vm4a --version` should print the version, not get killed.
+> **Need snapshots** (`vm4a snapshot save` / `restore`, `run --save-on-stop`,
+> `reset`)**?** On macOS 26 the VZ state-save key is gated on **hardened runtime +
+> a real signing identity** — ad-hoc signing fails with `VZErrorSave "permission
+> denied"`. Re-sign with an Apple Development or Developer ID identity **and**
+> `--options runtime`:
+> ```bash
+> codesign --force --options runtime \
+>   --sign "Apple Development: YOUR NAME (TEAMID)" \
+>   --entitlements /tmp/nat.entitlements ./.build/release/vm4a
+> ```
+>
+> **Need bridged networking?** Sign with a real Apple Developer identity
+> provisioned for the managed `com.apple.vm.networking` entitlement, using the
+> full `Sources/VM4ACLI/VM4ACLI.entitlements`. Ad-hoc signing cannot grant it.
 
 </details>
 
