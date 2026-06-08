@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vm4a"
-version = "2.5.0"
+version = "2.6.0"
 description = "Python client for vm4a's HTTP API — Apple Silicon VMs as agent sandboxes."
 readme = "README.md"
 license = { text = "MIT" }

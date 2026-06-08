@@ -7,7 +7,43 @@ All notable changes to this project. Versions follow [Semantic Versioning](https
 > their own sections here so the `VERSION` file, the README status table, and
 > this changelog tell the same story.
 
-## v2.5.0 — unreleased
+## v2.6.0
+
+First tagged release since v2.0.2 — ships everything on the v2.1–v2.5 lines
+below, plus named snapshots and two CLI correctness fixes.
+
+### Added — Named snapshots
+
+- `vm4a snapshot save <vm> <name>` — capture a running VM's live state to
+  `<bundle>/.vm4a-snapshots/<name>.vzstate` (the VM stops after saving). The CLI
+  signals the worker via `SIGUSR1`; on failure it surfaces the real reason
+  instead of a generic timeout.
+- `vm4a restore <vm> <name>` (alias for `vm4a snapshot restore`) — reboot a VM
+  to a named snapshot in ~1s.
+- `vm4a snapshot list <vm> [--output json]`, `vm4a snapshot rm <vm> <name>`.
+- These wrap the existing `.vzstate` machinery so you never juggle file paths.
+  On macOS 26 they require hardened-runtime + a real signing identity (see
+  README install notes) — ad-hoc signing fails with `VZErrorSave`.
+
+### Fixed
+
+- `exec`, `cluster exec`, and `ssh` no longer swallow their own options. They
+  used `.captureForPassthrough`, which captured `--output`/`--host`/`--timeout`
+  into the guest command (so the documented `vm4a exec /b --output json -- cmd`
+  silently passed those flags to ssh). Switched to `.postTerminator`: options
+  parse in any position, the command is whatever follows `--`.
+- `vm4a ip` no longer dumps the entire host DHCP lease table. Each NIC now gets
+  a fixed MAC persisted in `config.json` (generated at create, re-randomised on
+  `fork` so parallel forks don't collide), and leases are matched by MAC. No
+  match returns empty instead of a stranger's IP.
+
+### Changed
+
+- README/skill: NAT-only codesigning is now the documented default (the full
+  entitlements file gets AMFI-killed under ad-hoc signing on macOS 26), with
+  explicit notes on the extra signing needed for snapshots and bridged mode.
+
+## v2.5.0
 
 The "higher-level surface" release: a code-runner and port-exposer on top of
 the SSH primitives, an egress allow-list for network-restricted runs, a JS/TS

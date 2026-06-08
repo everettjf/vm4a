@@ -221,7 +221,7 @@ mkdir -p "$TAP_DIR/Formula" "$TAP_DIR/Casks"
 
 if [[ "$PUBLISH_CLI" -eq 1 ]]; then
   cat > "$FORMULA_PATH" <<FORMULA
-class Easyvm < Formula
+class Vm4a < Formula
   desc "Lightweight VM CLI for Apple Virtualization framework"
   homepage "https://github.com/$GH_REPO"
   url "$FORMULA_URL"
@@ -236,7 +236,7 @@ class Easyvm < Formula
   end
 
   test do
-    assert_match "VM4A standalone CLI", shell_output("#{bin}/vm4a --help")
+    assert_match "Virtual Machines for Agents", shell_output("#{bin}/vm4a --help")
   end
 
   def caveats
