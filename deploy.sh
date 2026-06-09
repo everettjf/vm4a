@@ -18,11 +18,21 @@ Options:
   --skip-tests             Skip pre-release tests.
   -h, --help               Show this help.
 
+Environment (for the app cask — required unless VM4A_SKIP_NOTARIZE=1):
+  APPLE_ID                 Apple ID email for notarization.
+  APPLE_TEAM_ID            Developer Team ID.
+  APPLE_SPECIFIC_PASSWORD  App-specific password for notarytool.
+  APPLE_SIGN_IDENTITY      Signing identity (default: auto-detected
+                           "Developer ID Application: …").
+  VM4A_SKIP_NOTARIZE=1     Ship an UNSIGNED app (Gatekeeper will block it).
+
 What this script does:
-  1) Bump version in VERSION (patch by default; --minor or --major to override)
-  2) Build artifacts (CLI and/or App DMG)
-  3) Commit & push version bump
-  4) Call scripts/release_homebrew_tap.sh with the bumped version
+  1) Bump VERSION, then sync the same version into Core.swift + both SDKs
+  2) Build artifacts: CLI binary, and the App DMG (Developer ID signed +
+     notarized + stapled, so the cask installs without a Gatekeeper prompt)
+  3) Commit & push the version bump (all version-bearing files together)
+  4) Call scripts/release_homebrew_tap.sh — by default publishes BOTH the CLI
+     formula and the app cask at the same version, so they never drift
 USAGE
 }
 
@@ -108,6 +118,8 @@ require_cmd xcodebuild
 require_cmd hdiutil
 require_cmd mktemp
 require_cmd python3
+require_cmd xcrun
+require_cmd ditto
 
 if [[ ! -x "$ROOT_DIR/scripts/release_homebrew_tap.sh" ]]; then
   echo "Missing release script: scripts/release_homebrew_tap.sh" >&2
@@ -141,9 +153,18 @@ fi
 
 RELEASE_DONE=0
 TMP_BUILD_DIR=""
+# Every file that carries the version number — bumped and committed together so
+# the binary, the SDKs, and the git tag never disagree.
+VERSION_SYNCED_FILES=(
+  VERSION
+  Sources/VM4ACore/Core.swift
+  sdk/python/pyproject.toml
+  sdk/python/src/vm4a/__init__.py
+  sdk/typescript/package.json
+)
 rollback() {
   if [[ "$RELEASE_DONE" -eq 0 ]]; then
-    git checkout -- VERSION >/dev/null 2>&1 || true
+    git checkout -- "${VERSION_SYNCED_FILES[@]}" >/dev/null 2>&1 || true
   fi
   if [[ -n "$TMP_BUILD_DIR" ]]; then
     remove_dir_if_exists "$TMP_BUILD_DIR"
@@ -156,6 +177,13 @@ NO_GIT=1 "$ROOT_DIR/$BUMP_SCRIPT"
 VERSION=$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")
 TAG="v$VERSION"
 echo "Release version: $VERSION"
+
+# inc_*_version.sh only touches VERSION; sync the in-binary version + SDKs too.
+echo "Syncing version $VERSION into Core.swift + SDKs..."
+sed -i '' "s/public let vm4aVersion = \"[^\"]*\"/public let vm4aVersion = \"$VERSION\"/" Sources/VM4ACore/Core.swift
+sed -i '' "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" sdk/python/pyproject.toml
+sed -i '' "s/^__version__ = \"[^\"]*\"/__version__ = \"$VERSION\"/" sdk/python/src/vm4a/__init__.py
+sed -i '' "s/^  \"version\": \"[^\"]*\"/  \"version\": \"$VERSION\"/" sdk/typescript/package.json
 
 if [[ "$PUBLISH_CLI" -eq 1 ]]; then
   echo "Building CLI release binary..."
@@ -182,13 +210,50 @@ if [[ "$PUBLISH_APP" -eq 1 ]]; then
     exit 1
   fi
 
+  if [[ "${VM4A_SKIP_NOTARIZE:-0}" == "1" ]]; then
+    echo "VM4A_SKIP_NOTARIZE=1 → shipping an UNSIGNED app (Gatekeeper will block it on download)." >&2
+  else
+    # Developer ID sign + notarize so `brew install --cask` opens without a
+    # Gatekeeper prompt. Needs a Developer ID identity and notary credentials.
+    SIGN_IDENTITY="${APPLE_SIGN_IDENTITY:-}"
+    if [[ -z "$SIGN_IDENTITY" ]]; then
+      SIGN_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
+        | grep -o '"Developer ID Application: [^"]*"' | head -1 | tr -d '"')
+    fi
+    if [[ -z "$SIGN_IDENTITY" ]]; then
+      echo "No 'Developer ID Application' identity found. Set APPLE_SIGN_IDENTITY, or VM4A_SKIP_NOTARIZE=1 to ship unsigned." >&2
+      exit 1
+    fi
+    : "${APPLE_ID:?set APPLE_ID for notarization (or VM4A_SKIP_NOTARIZE=1)}"
+    : "${APPLE_TEAM_ID:?set APPLE_TEAM_ID for notarization (or VM4A_SKIP_NOTARIZE=1)}"
+    : "${APPLE_SPECIFIC_PASSWORD:?set APPLE_SPECIFIC_PASSWORD for notarization (or VM4A_SKIP_NOTARIZE=1)}"
+    NOTARY_ARGS=(--apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_SPECIFIC_PASSWORD" --wait)
+
+    echo "Signing app: $SIGN_IDENTITY"
+    codesign --force --options runtime --timestamp \
+      --sign "$SIGN_IDENTITY" \
+      --entitlements VM4A/VM4A/VM4A.entitlements "$APP_PATH"
+
+    echo "Notarizing app + stapling..."
+    ditto -c -k --keepParent "$APP_PATH" "$TMP_BUILD_DIR/VM4A-app.zip"
+    xcrun notarytool submit "$TMP_BUILD_DIR/VM4A-app.zip" "${NOTARY_ARGS[@]}"
+    xcrun stapler staple "$APP_PATH"
+  fi
+
   APP_DMG_PATH="$TMP_BUILD_DIR/VM4A.dmg"
   echo "Packaging DMG: $APP_DMG_PATH"
   hdiutil create -volname "VM4A" -srcfolder "$APP_PATH" -ov -format UDZO "$APP_DMG_PATH" >/dev/null
+
+  if [[ "${VM4A_SKIP_NOTARIZE:-0}" != "1" ]]; then
+    echo "Signing + notarizing DMG + stapling..."
+    codesign --force --timestamp --sign "$SIGN_IDENTITY" "$APP_DMG_PATH"
+    xcrun notarytool submit "$APP_DMG_PATH" "${NOTARY_ARGS[@]}"
+    xcrun stapler staple "$APP_DMG_PATH"
+  fi
 fi
 
 echo "Committing version bump..."
-git add VERSION
+git add "${VERSION_SYNCED_FILES[@]}"
 git commit -m "new version: $VERSION"
 git push
 
