@@ -4,7 +4,7 @@ import Foundation
 /// Single source of truth for the version string surfaced over the wire
 /// (HTTP /v1/health, MCP serverInfo). Keep in sync with the repo `VERSION`
 /// file and the SDK package versions on each release.
-public let vm4aVersion = "2.6.0"
+public let vm4aVersion = "2.6.1"
 
 public enum VM4AError: Error, CustomStringConvertible {
     case message(String)

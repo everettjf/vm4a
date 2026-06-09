@@ -7,6 +7,16 @@ All notable changes to this project. Versions follow [Semantic Versioning](https
 > their own sections here so the `VERSION` file, the README status table, and
 > this changelog tell the same story.
 
+## v2.6.1
+
+### Fixed
+
+- `clone` and `fork` now name the copied bundle after its destination directory
+  instead of inheriting the source's name (which made `vm4a list` show several
+  identically-named VMs). `clone` also re-randomises the NIC MAC now, so a
+  copy is a fully independent VM and doesn't share a DHCP lease with its source
+  under MAC-based `ip` resolution.
+
 ## v2.6.0
 
 First tagged release since v2.0.2 — ships everything on the v2.1–v2.5 lines

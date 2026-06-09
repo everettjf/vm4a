@@ -1,6 +1,6 @@
 {
   "name": "vm4a",
-  "version": "2.6.0",
+  "version": "2.6.1",
   "description": "JavaScript/TypeScript client for vm4a's HTTP API — Apple Silicon VMs as agent sandboxes.",
   "type": "module",
   "main": "./dist/index.js",
