@@ -199,13 +199,19 @@ if [[ "$PUBLISH_APP" -eq 1 ]]; then
   RELEASE_ASSETS+=("$APP_RELEASE_PATH")
 fi
 
-if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
-  echo "Uploading assets to existing release $TAG ..."
-  gh release upload "$TAG" --repo "$GH_REPO" "${RELEASE_ASSETS[@]}" --clobber
-else
+# Ensure the release exists, then upload assets one at a time, deleting any
+# same-named asset first. Bulk upload (and `--clobber`) intermittently fails
+# with "HTTP 422 ReleaseAsset.name already exists", so we do it per-asset.
+if ! gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
   echo "Creating release $TAG ..."
-  gh release create "$TAG" --repo "$GH_REPO" "${RELEASE_ASSETS[@]}" -t "$TAG" -n "VM4A $TAG"
+  gh release create "$TAG" --repo "$GH_REPO" -t "$TAG" -n "VM4A $TAG" --verify-tag
 fi
+for asset in "${RELEASE_ASSETS[@]}"; do
+  asset_name=$(basename "$asset")
+  echo "Uploading $asset_name to $TAG ..."
+  gh release delete-asset "$TAG" "$asset_name" -y --repo "$GH_REPO" >/dev/null 2>&1 || true
+  gh release upload "$TAG" "$asset" --repo "$GH_REPO"
+done
 
 FORMULA_URL="https://github.com/$GH_REPO/releases/download/$TAG/$CLI_ASSET_NAME"
 CASK_URL="https://github.com/$GH_REPO/releases/download/$TAG/VM4A.dmg"
