@@ -358,14 +358,11 @@ struct CloneCommand: ParsableCommand {
         clearPID(at: model.runPIDURL)
         try? FileManager.default.removeItem(at: model.runLogURL)
 
-        switch model.config.type {
-        case .linux:
-            let newIdentifier = VZGenericMachineIdentifier()
-            try newIdentifier.dataRepresentation.write(to: model.machineIdentifierURL)
-        case .macOS:
-            let newIdentifier = VZMacMachineIdentifier()
-            try newIdentifier.dataRepresentation.write(to: model.machineIdentifierURL)
-        }
+        // Make the clone a fully independent VM: fresh MachineIdentifier + NIC
+        // MAC (so it doesn't share a DHCP lease with the source), and a name
+        // matching its own directory.
+        try reidentifyVM(model: model)
+        try renameBundle(at: dst, to: dst.lastPathComponent)
 
         print("Cloned VM to \(dst.path()) \(viaClone ? "(APFS clonefile)" : "(byte copy)")")
     }

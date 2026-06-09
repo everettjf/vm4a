@@ -251,6 +251,40 @@ struct CoreTests {
     }
 
     @Test
+    func forkRenamesBundleToDestinationDirectory() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appending(path: "vm4a-fork-rename-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let src = root.appending(path: "src", directoryHint: .isDirectory)
+        let dst = root.appending(path: "task-42", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: src, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let config = VMConfigModel.defaults(
+            osType: .linux, name: "src", cpu: 1,
+            memoryBytes: 1 << 30, diskBytes: 1 << 30
+        )
+        let state = VMStateModel(imagePath: src)
+        let model = VMModel(rootPath: src, config: config, state: state)
+        try writeJSON(config, to: model.configURL)
+        try writeJSON(state, to: model.stateURL)
+        try VZGenericMachineIdentifier().dataRepresentation.write(to: model.machineIdentifierURL)
+
+        _ = try runFork(options: ForkOptions(
+            sourcePath: src.path(),
+            destinationPath: dst.path(),
+            keepIdentity: false
+        ), executable: "/usr/bin/true")
+
+        let dstConfig = try JSONDecoder().decode(
+            VMConfigModel.self,
+            from: Data(contentsOf: dst.appending(path: "config.json"))
+        )
+        // Renamed to its own directory, and given a fresh MAC (source had none).
+        #expect(dstConfig.name == "task-42")
+        #expect(dstConfig.networkDevices.first?.macAddress != nil)
+    }
+
+    @Test
     func cloneDirectoryPreservesContentsAndBlocksExisting() throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appending(path: "vm4a-clone-\(UUID().uuidString)", directoryHint: .isDirectory)

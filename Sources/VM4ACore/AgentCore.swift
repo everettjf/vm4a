@@ -722,6 +722,8 @@ public func runFork(options: ForkOptions, executable: String) throws -> ForkOutc
     if !options.keepIdentity {
         try reidentifyVM(model: model)
     }
+    // Name the bundle after its new directory so `list` doesn't show duplicates.
+    try? renameBundle(at: dst, to: dst.lastPathComponent)
 
     var pid: Int32?
     var ip: String?

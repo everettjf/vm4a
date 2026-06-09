@@ -288,8 +288,32 @@ public func networkDevicesWithFreshMACs(_ devices: [VMModelFieldNetworkDevice]) 
     }
 }
 
-/// Re-randomize a VM bundle's MachineIdentifier file so a clone boots as a
-/// distinct machine. Caller should make sure the VM is not running.
+/// Copy a config, overriding only the fields a caller wants to change. Works
+/// around `VMConfigModel`'s `let` properties (no mutating copy).
+func configCopy(
+    _ c: VMConfigModel,
+    name: String? = nil,
+    networkDevices: [VMModelFieldNetworkDevice]? = nil
+) -> VMConfigModel {
+    VMConfigModel(
+        type: c.type,
+        name: name ?? c.name,
+        remark: c.remark,
+        cpu: c.cpu,
+        memory: c.memory,
+        graphicsDevices: c.graphicsDevices,
+        storageDevices: c.storageDevices,
+        networkDevices: networkDevices ?? c.networkDevices,
+        pointingDevices: c.pointingDevices,
+        audioDevices: c.audioDevices,
+        directorySharingDevices: c.directorySharingDevices,
+        rosetta: c.rosetta
+    )
+}
+
+/// Re-randomize a VM bundle's MachineIdentifier and NIC MAC(s) so a copied
+/// bundle boots as a distinct machine and doesn't share a DHCP lease with its
+/// source. Caller should make sure the VM is not running.
 public func reidentifyVM(model: VMModel) throws {
     switch model.config.type {
     case .linux:
@@ -300,27 +324,19 @@ public func reidentifyVM(model: VMModel) throws {
         try data.write(to: model.machineIdentifierURL)
     }
 
-    // Re-randomize NIC MACs too, then rewrite config.json. Two forks of the
-    // same golden bundle must not share a MAC, or their DHCP leases collide.
     let refreshed = networkDevicesWithFreshMACs(model.config.networkDevices)
     if !refreshed.isEmpty {
-        let cfg = model.config
-        let updated = VMConfigModel(
-            type: cfg.type,
-            name: cfg.name,
-            remark: cfg.remark,
-            cpu: cfg.cpu,
-            memory: cfg.memory,
-            graphicsDevices: cfg.graphicsDevices,
-            storageDevices: cfg.storageDevices,
-            networkDevices: refreshed,
-            pointingDevices: cfg.pointingDevices,
-            audioDevices: cfg.audioDevices,
-            directorySharingDevices: cfg.directorySharingDevices,
-            rosetta: cfg.rosetta
-        )
-        try writeJSON(updated, to: model.configURL)
+        try writeJSON(configCopy(model.config, networkDevices: refreshed), to: model.configURL)
     }
+}
+
+/// Rewrite a bundle's config.json with a new VM name. Used by clone/fork so a
+/// copied bundle reports its own directory name instead of the source's.
+/// Reloads from disk so it composes after `reidentifyVM` without clobbering it.
+public func renameBundle(at rootPath: URL, to newName: String) throws {
+    let model = try loadModel(rootPath: rootPath)
+    guard model.config.name != newName, !newName.isEmpty else { return }
+    try writeJSON(configCopy(model.config, name: newName), to: model.configURL)
 }
 
 // MARK: - List helper used by both CLI list and MCP/HTTP
