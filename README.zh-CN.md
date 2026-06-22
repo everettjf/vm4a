@@ -39,6 +39,10 @@ VM4A 念作 **"VM for Agent"**，CLI 二进制叫 `vm4a`。
 ## 30 秒看一遍
 
 ```bash
+# 0. 最简：一条命令起一台默认 Linux VM，零参数
+#    名字自动生成，镜像默认 ubuntu-24.04-arm64
+vm4a spawn
+
 # 1. 拉一个预制好的 Python 开发镜像，启动，等 SSH 就绪
 vm4a spawn dev \
     --from ghcr.io/everettjf/vm4a-templates/python-dev:latest \

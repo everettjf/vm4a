@@ -280,6 +280,12 @@ public struct SpawnOptions: Sendable {
     /// egress allow-list is written to the bundle and applied once SSH is
     /// reachable (Linux guests only).
     public var allowDomains: [String]
+    /// When the bundle does not exist and no `from`/`image` is given, a Linux
+    /// spawn falls back to the default distro instead of erroring. Opt-in so
+    /// only the interactive CLI gets the convenience; the HTTP/MCP entry points
+    /// leave this `false` so a missing image is a fast, cheap client error
+    /// rather than a surprise multi-GB download + install.
+    public var allowDefaultImage: Bool
 
     public init(
         name: String,
@@ -301,7 +307,8 @@ public struct SpawnOptions: Sendable {
         sshKey: String? = nil,
         hostOverride: String? = nil,
         waitTimeout: TimeInterval = 90,
-        allowDomains: [String] = []
+        allowDomains: [String] = [],
+        allowDefaultImage: Bool = false
     ) {
         self.name = name
         self.os = os
@@ -327,6 +334,7 @@ public struct SpawnOptions: Sendable {
         self.hostOverride = hostOverride
         self.waitTimeout = waitTimeout
         self.allowDomains = allowDomains
+        self.allowDefaultImage = allowDefaultImage
     }
 }
 
@@ -362,9 +370,18 @@ public func runSpawn(
             if pulled.path() != bundleURL.path() {
                 try FileManager.default.moveItem(at: pulled, to: bundleURL)
             }
-        } else if options.imagePath != nil || options.os == .macOS {
-            // Resolve the image spec (catalog id / URL / local path / nil-for-macOS-latest)
-            // into a real cached file before building the bundle.
+        } else {
+            // No bundle and no --from: build from an image. macOS auto-fetches
+            // the latest IPSW when --image is omitted; Linux only falls back to
+            // the default distro when the caller opted in (the interactive CLI).
+            // Otherwise a missing Linux image is a fast, cheap error rather than
+            // a surprise multi-GB download — important for the HTTP/MCP paths.
+            let hasImage = !(options.imagePath?.trimmingCharacters(in: .whitespaces).isEmpty ?? true)
+            if !hasImage, options.os == .linux, !options.allowDefaultImage {
+                throw VM4AError.message("Bundle '\(bundleURL.path())' not found. Pass --from <oci-ref> or --image <spec>.")
+            }
+            // Resolve the image spec (catalog id / URL / local path) into a
+            // real cached file before building the bundle.
             let resolved = try await resolveImage(
                 spec: options.imagePath,
                 os: options.os,
@@ -382,8 +399,6 @@ public func runSpawn(
                 bridgedInterface: options.bridgedInterface,
                 rosetta: options.rosetta
             ), progress: progress)
-        } else {
-            throw VM4AError.message("Bundle '\(bundleURL.path())' not found. Pass --from <oci-ref> or --image <spec>.")
         }
     }
 
