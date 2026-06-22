@@ -92,7 +92,15 @@ CLI 创建的 bundle 能在 GUI app 里打开，反之亦然。命令都指向 b
 
 ## 30 秒启动第一台 VM
 
-最快的方式是从 OCI registry 拉一个预制镜像：
+最简单的方式连参数都不用——`vm4a spawn` 会自动取名，并用默认 Linux 镜像
+（`ubuntu-24.04-arm64`）以及合理的 CPU / 内存 / 磁盘 / NAT 默认值启动：
+
+```bash
+# 零参数：一台自动命名的默认 Linux VM。
+vm4a spawn
+```
+
+面向 agent 和自动化时，最快的方式是从 OCI registry 拉一个能直接启动到 SSH 的预制镜像：
 
 ```bash
 # 1. 拉取、启动、等 SSH。
@@ -109,7 +117,7 @@ vm4a stop /tmp/vm4a/dev
 ```
 
 {: .note }
-> 手头没有 registry 镜像？也可以 `vm4a create demo --image ubuntu-24.04-arm64` 从 ISO 构建 —— 但 ISO 安装是交互式的。要自动化，能直接启动到 SSH 的预制 OCI bundle 才是正道。[第一台 VM 教程](tutorials/01-first-vm) 两种都讲。
+> 手头没有 registry 镜像？`vm4a create demo` 可从 ISO 构建 —— `--image` 现在是可选的，默认 `ubuntu-24.04-arm64`（传入别的可换发行版）。不过 ISO 安装是交互式的；要自动化，能直接启动到 SSH 的预制 OCI bundle 才是正道。[第一台 VM 教程](tutorials/01-first-vm) 两种都讲。
 
 ## 处处是 JSON
 

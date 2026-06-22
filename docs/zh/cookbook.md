@@ -99,7 +99,7 @@ CLI 的命令名（`spawn` / `exec` / `cp` / `fork` / `reset` / `pool` / `sessio
 |---|---|---|
 | 镜像类型 | ISO（约 1–3 GB） | IPSW（约 12–15 GB） |
 | catalog 条目 | 4 个固定 distro（Ubuntu / Fedora / Debian / Alpine） | 1 个 `macos-latest`（运行时查 Apple） |
-| `--image` 缺省 | **必填** | **可省** —— 自动用 `macos-latest` |
+| `--image` 缺省 | **可省** —— 默认 `ubuntu-24.04-arm64` | **可省** —— 自动用 `macos-latest` |
 | 安装方式 | ISO 当 USB 挂上，guest 自己跑安装器 | `vm4a` 调 `VZMacOSInstaller` 完整安装 |
 | 安装时长 | 几分钟（autoinstall）到 10+ 分钟 | 10–20 分钟 |
 | **首次启动** | **全 headless**（cloud-init / autoinstall / preseed 跑完） | **必须手动**点一次 Setup Assistant |

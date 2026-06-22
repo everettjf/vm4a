@@ -214,7 +214,7 @@ vm4a expose-port /tmp/vm4a/dev --port 8000
 
 | 命令 | 用途 |
 |---|---|
-| `vm4a create <name> [--os linux\|macOS] [--image <path>] [...]` | 创建 VM bundle。Linux 用 ISO，macOS 用 IPSW（直接走完整安装） |
+| `vm4a create [<name>] [--os linux\|macOS] [--image <path>] [...]` | 创建 VM bundle。名字和镜像均可省（默认：自动命名 + Linux 用 `ubuntu-24.04-arm64`，macOS 用最新 IPSW）。Linux 用 ISO，macOS 用 IPSW（直接走完整安装） |
 | `vm4a list [--storage <dir>]` | 列出某目录下的 bundle，附带状态、pid、IP |
 | `vm4a run <vm-path> [--foreground]` | 后台（默认）或前台启动 VM |
 | `vm4a stop <vm-path> [--timeout <s>]` | 先 SIGTERM，超时则 SIGKILL |

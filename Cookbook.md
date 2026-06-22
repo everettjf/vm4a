@@ -93,7 +93,7 @@ The CLI surface (`spawn` / `exec` / `cp` / `fork` / `reset` / `pool` / `session`
 |---|---|---|
 | Image type | ISO (~1–3 GB) | IPSW (~12–15 GB) |
 | Catalog entries | 4 fixed distros (Ubuntu / Fedora / Debian / Alpine) | 1 sentinel `macos-latest` (resolved at fetch time via Apple) |
-| `--image` if omitted | **Required** | **Optional** — auto-fetches `macos-latest` |
+| `--image` if omitted | **Optional** — defaults to `ubuntu-24.04-arm64` | **Optional** — auto-fetches `macos-latest` |
 | Install mechanism | ISO attached as USB; guest runs its own installer | `vm4a` drives `VZMacOSInstaller` end-to-end |
 | Install duration | minutes (autoinstall) to ~10 min | 10–20 min |
 | **First boot** | **Fully headless** (cloud-init / autoinstall / preseed finishes everything) | **One manual step** — Setup Assistant must be clicked through |

@@ -91,7 +91,17 @@ A bundle made by the CLI opens in the GUI app and vice-versa. You point commands
 
 ## Your first VM in 30 seconds
 
-The fastest path is pulling a pre-baked image from an OCI registry:
+The simplest possible start needs no arguments at all — `vm4a spawn` auto-names
+the VM and boots a default Linux image (`ubuntu-24.04-arm64`) with sensible
+CPU / memory / disk / NAT defaults:
+
+```bash
+# Zero flags: a default Linux VM, auto-named.
+vm4a spawn
+```
+
+For agents and automation, the fastest path is pulling a pre-baked image from an
+OCI registry that boots straight to SSH:
 
 ```bash
 # 1. Pull, start, wait for SSH.
@@ -108,7 +118,7 @@ vm4a stop /tmp/vm4a/dev
 ```
 
 {: .note }
-> No registry image handy? You can also `vm4a create demo --image ubuntu-24.04-arm64` to build from an ISO — but ISO installs are interactive. For automation, a pre-baked OCI bundle that boots straight to SSH is the way. The [first-VM tutorial](tutorials/01-first-vm) covers both.
+> No registry image handy? `vm4a create demo` builds from an ISO — `--image` is optional and defaults to `ubuntu-24.04-arm64` (pass one to pick another distro). ISO installs are interactive, though; for automation, a pre-baked OCI bundle that boots straight to SSH is the way. The [first-VM tutorial](tutorials/01-first-vm) covers both.
 
 ## JSON everywhere
 

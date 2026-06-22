@@ -214,7 +214,7 @@ vm4a expose-port /tmp/vm4a/dev --port 8000
 
 | Command | What it does |
 |---|---|
-| `vm4a create <name> [--os linux\|macOS] [--image <path>] [...]` | Create a VM bundle. Linux from ISO; macOS from IPSW (drives full install). |
+| `vm4a create [<name>] [--os linux\|macOS] [--image <path>] [...]` | Create a VM bundle. Name and image are optional (default: auto-name + `ubuntu-24.04-arm64` for Linux, latest IPSW for macOS). Linux from ISO; macOS from IPSW (drives full install). |
 | `vm4a list [--storage <dir>]` | List bundles in a directory with status, pid, IP. |
 | `vm4a run <vm-path> [--foreground]` | Start a VM in the background (default) or attached. |
 | `vm4a stop <vm-path> [--timeout <s>]` | Send SIGTERM, escalate to SIGKILL if needed. |

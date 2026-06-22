@@ -7,6 +7,28 @@ All notable changes to this project. Versions follow [Semantic Versioning](https
 > their own sections here so the `VERSION` file, the README status table, and
 > this changelog tell the same story.
 
+## v2.7.0
+
+### Added — Zero-flag create & spawn
+
+- `vm4a create` and `vm4a spawn` now work with no arguments. The `<name>`
+  argument is optional (an auto-generated `vm-XXXXXX` name is used when omitted),
+  and `--image` defaults to a sensible image per OS — Linux to
+  `ubuntu-24.04-arm64`, macOS to Apple's latest supported IPSW. So
+  `vm4a spawn` alone boots a default Linux VM with sensible CPU / memory / disk /
+  NAT defaults; override only what you need.
+- The top-level `vm4a --help` now groups the subcommands by area (the five most
+  common shown first, the rest under Agent workflow / VM lifecycle / Snapshots /
+  Images & registry / Networking / Scale & orchestration / Sessions & servers)
+  instead of one flat list.
+
+### Note
+
+- The zero-flag image default applies only to the interactive CLI. The HTTP API
+  (`/v1/spawn`) and MCP `spawn` tool still return a fast "pass --from or --image"
+  error when a non-existent bundle is requested without an image, rather than
+  silently kicking off a multi-GB download.
+
 ## v2.6.1
 
 ### Fixed

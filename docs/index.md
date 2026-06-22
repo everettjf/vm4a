@@ -26,7 +26,10 @@ Coding agents — Claude Code, Cursor, OpenAI Codex, your own loop — keep need
 One binary, `vm4a`, handles the whole lifecycle: create, run, snapshot, fork, OCI push/pull, plus the agent surfaces (CLI, MCP, HTTP API, SDKs, and a cluster scheduler).
 
 ```bash
-# Pull a pre-baked image, boot it, wait for SSH, run code — one line each.
+# Zero flags: auto-named default Linux VM.
+vm4a spawn
+
+# Or pull a pre-baked image, boot it, wait for SSH, run code — one line each.
 vm4a spawn dev --from ghcr.io/yourorg/python-dev:latest --storage /tmp/vm4a --wait-ssh
 vm4a run-code /tmp/vm4a/dev --lang python --code 'print(1 + 1)'
 ```
