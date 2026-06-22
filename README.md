@@ -39,6 +39,10 @@ VM4A is **"VM for Agent"** — pronounced *"VM-for-A"*. The CLI is `vm4a`.
 ## 30-second demo
 
 ```bash
+# 0. Simplest possible: a default Linux VM, no flags at all.
+#    Name is auto-generated; image defaults to ubuntu-24.04-arm64.
+vm4a spawn
+
 # 1. Pull a pre-baked Python dev image, start it, wait for SSH.
 vm4a spawn dev \
     --from ghcr.io/everettjf/vm4a-templates/python-dev:latest \

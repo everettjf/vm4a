@@ -27,17 +27,20 @@ struct SpawnCommand: AsyncParsableCommand {
             Behavior:
               - If <storage>/<name> already exists, just (re)start it.
               - Else if --from <oci-ref>: pull, then start.
-              - Else if --image <iso-or-ipsw>: create from scratch, then start.
-                Linux ISO: attaches as USB, first-run install.
-                macOS IPSW: drives VZMacOSInstaller end-to-end (10–20 min).
+              - Else create from scratch, then start.
+                --image takes an ISO/IPSW (catalog id, path, or URL); omit it to
+                use a sensible default (Linux → \(defaultLinuxImageID);
+                macOS → latest IPSW). Linux ISO attaches as USB for first-run
+                install; macOS IPSW drives VZMacOSInstaller (10–20 min).
 
-            Designed for AI agents: --output json + --wait-ssh together give a
-            single call that returns {ip, ssh_ready=true} or fails fast.
+            Quick start: `vm4a spawn` with no arguments boots a default Linux VM
+            with an auto-generated name. Designed for AI agents: --output json +
+            --wait-ssh together return {ip, ssh_ready=true} or fail fast.
             """
     )
 
-    @Argument(help: "VM name (becomes <storage>/<name>)")
-    var name: String
+    @Argument(help: "VM name (becomes <storage>/<name>; auto-generated as vm-XXXXXX if omitted)")
+    var name: String?
 
     @Option(name: .long, help: "OS type: linux (default) or macOS")
     var os: VMOSType = .linux
@@ -48,7 +51,7 @@ struct SpawnCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Pull this OCI reference if bundle does not yet exist")
     var from: String?
 
-    @Option(name: .long, help: "Image spec: catalog id (see `vm4a image list`), local file path, https:// URL, or omit for macOS to auto-fetch the latest IPSW.")
+    @Option(name: .long, help: "Image spec: catalog id (see `vm4a image list`), local file path, or https:// URL. Omit to use a sensible default (Linux → \(defaultLinuxImageID); macOS → latest IPSW).")
     var image: String?
 
     @Option(name: .long, help: "vCPU count")
@@ -107,8 +110,9 @@ struct SpawnCommand: AsyncParsableCommand {
 
     mutating func run() async throws {
         let storageURL = URL(fileURLWithPath: storage, isDirectory: true)
+        let vmName = name ?? generatedVMName()
         let recorder = SessionRecorder(id: session, kind: "spawn", args: [
-            "name": .string(name),
+            "name": .string(vmName),
             "os": .string(os.rawValue),
             "from": from.map { .string($0) } ?? .null,
             "image": image.map { .string($0) } ?? .null,
@@ -118,7 +122,7 @@ struct SpawnCommand: AsyncParsableCommand {
         let memoryBytes = try memoryGB.map { try bytesFromGB($0, fieldName: "memory-gb") }
         let diskBytes = try diskGB.map { try bytesFromGB($0, fieldName: "disk-gb") }
         let options = SpawnOptions(
-            name: name,
+            name: vmName,
             os: os,
             storage: storageURL,
             from: from,

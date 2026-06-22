@@ -30,39 +30,62 @@ struct VM4ACLI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "vm4a",
         abstract: "VM4A — Virtual Machines for Agents (Apple Silicon)",
+        discussion: """
+            Quick start (zero flags — auto-named default Linux VM):
+              vm4a spawn                 create + start, then `vm4a ssh <name>`
+              vm4a spawn --wait-ssh      block until SSH is reachable
+
+            Commands are grouped below. The five at the top cover most use; the
+            rest are grouped by area. Run `vm4a <command> --help` for details.
+            """,
         version: vm4aVersion,
         subcommands: [
-            // Agent-first primitives (P0)
+            // Most-used, shown first as the ungrouped "SUBCOMMANDS" set.
             SpawnCommand.self,
             ExecCommand.self,
             CpCommand.self,
-            ForkCommand.self,
-            ResetCommand.self,
-            RunCodeCommand.self,
-            ExposePortCommand.self,
-            // Agent integrations (P1, v2.1)
-            MCPCommand.self,
-            ServeCommand.self,
-            ClusterCommand.self,
-            // Sessions + pools (v2.3 + v2.4 foundations)
-            SessionCommand.self,
-            PoolCommand.self,
-            // Classic lifecycle
-            CreateCommand.self,
-            ListCommand.self,
-            RunCommand.self,
-            StopCommand.self,
-            SnapshotCommand.self,
-            RestoreCommand.self,
-            CloneCommand.self,
-            NetworkCommand.self,
-            ImageCommand.self,
-            PushCommand.self,
-            PullCommand.self,
-            IPCommand.self,
             SSHCommand.self,
-            AgentCommand.self,
+            ListCommand.self,
+            // Internal worker (hidden via shouldDisplay: false on its config),
+            // kept registered because `vm4a run` re-invokes it as a subprocess.
             RunWorkerCommand.self
+        ],
+        groupedSubcommands: [
+            CommandGroup(name: "Agent workflow", subcommands: [
+                ForkCommand.self,
+                ResetCommand.self,
+                RunCodeCommand.self,
+                ExposePortCommand.self,
+                AgentCommand.self
+            ]),
+            CommandGroup(name: "VM lifecycle", subcommands: [
+                CreateCommand.self,
+                RunCommand.self,
+                StopCommand.self,
+                CloneCommand.self,
+                IPCommand.self
+            ]),
+            CommandGroup(name: "Snapshots", subcommands: [
+                SnapshotCommand.self,
+                RestoreCommand.self
+            ]),
+            CommandGroup(name: "Images & registry", subcommands: [
+                ImageCommand.self,
+                PushCommand.self,
+                PullCommand.self
+            ]),
+            CommandGroup(name: "Networking", subcommands: [
+                NetworkCommand.self
+            ]),
+            CommandGroup(name: "Scale & orchestration", subcommands: [
+                PoolCommand.self,
+                ClusterCommand.self
+            ]),
+            CommandGroup(name: "Sessions & servers", subcommands: [
+                SessionCommand.self,
+                ServeCommand.self,
+                MCPCommand.self
+            ])
         ]
     )
 }
@@ -72,20 +95,25 @@ struct CreateCommand: AsyncParsableCommand {
         commandName: "create",
         abstract: "Create a VM bundle (Linux from ISO, or macOS from IPSW)",
         discussion: """
-            Linux: pass --image with an ARM64 ISO; the bundle attaches it as
-            a USB device for first-boot install.
+            Quick start: `vm4a create` with no arguments builds a Linux VM from
+            the default image with an auto-generated name and sensible CPU /
+            memory / disk / NAT defaults. Override only what you need.
 
-            macOS: pass --image with an .ipsw and Apple's VZMacOSInstaller
-            runs end-to-end (10–20 minutes). The resulting bundle boots into
-            Setup Assistant on first run, which Apple does not expose a
-            scriptable skip for; complete that step interactively in VM4A.app
-            or via the VZ framebuffer, after which all other vm4a commands
-            (run/exec/cp/fork/reset/…) work on macOS bundles just like Linux.
+            Linux: --image takes an ARM64 ISO (catalog id, local path, or URL);
+            the bundle attaches it as a USB device for first-boot install. Omit
+            it to use the default distro (\(defaultLinuxImageID)).
+
+            macOS: pass --image with an .ipsw (or omit it to auto-fetch Apple's
+            latest supported IPSW); VZMacOSInstaller runs end-to-end (10–20 min).
+            The resulting bundle boots into Setup Assistant on first run, which
+            Apple does not expose a scriptable skip for; complete that step
+            interactively in VM4A.app or via the VZ framebuffer, after which all
+            other vm4a commands (run/exec/cp/fork/reset/…) work just like Linux.
             """
     )
 
-    @Argument(help: "VM name")
-    var name: String
+    @Argument(help: "VM name (optional; auto-generated as vm-XXXXXX if omitted)")
+    var name: String?
 
     @Option(name: .long, help: "OS type: linux (default) or macOS")
     var os: VMOSType = .linux
@@ -93,7 +121,7 @@ struct CreateCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Parent directory to store VM bundles")
     var storage: String = FileManager.default.currentDirectoryPath
 
-    @Option(name: .long, help: "Image spec: catalog id (see `vm4a image list`), local file path, https:// URL, or omit for macOS to auto-fetch the latest IPSW.")
+    @Option(name: .long, help: "Image spec: catalog id (see `vm4a image list`), local file path, or https:// URL. Omit to use a sensible default (Linux → \(defaultLinuxImageID); macOS → latest IPSW).")
     var image: String?
 
     @Option(name: .long, help: "vCPU count")
@@ -122,6 +150,7 @@ struct CreateCommand: AsyncParsableCommand {
 
     mutating func run() async throws {
         let storageURL = URL(fileURLWithPath: storage, isDirectory: true)
+        let vmName = name ?? generatedVMName()
         let memoryBytes = try memoryGB.map { try bytesFromGB($0, fieldName: "memory-gb") }
         let diskBytes = try diskGB.map { try bytesFromGB($0, fieldName: "disk-gb") }
 
@@ -130,18 +159,14 @@ struct CreateCommand: AsyncParsableCommand {
         }
 
         // Resolve --image (catalog id / URL / local path) into a real file
-        // path on disk, downloading + caching if needed.
-        let resolvedImagePath: String?
-        if image != nil || os == .macOS {
-            let resolved = try await resolveImage(spec: image, os: os, progress: progressSink)
-            resolvedImagePath = resolved.path()
-        } else {
-            resolvedImagePath = nil
-        }
+        // path on disk, downloading + caching if needed. Omitting --image
+        // falls back to a sensible default for the chosen OS.
+        let resolved = try await resolveImage(spec: image, os: os, progress: progressSink)
+        let resolvedImagePath: String? = resolved.path()
 
         let outcome = try await createBundle(
             options: CreateBundleOptions(
-                name: name,
+                name: vmName,
                 os: os,
                 storage: storageURL,
                 imagePath: resolvedImagePath,
@@ -162,11 +187,7 @@ struct CreateCommand: AsyncParsableCommand {
         case .json:
             try writeJSONLine(outcome, pretty: pretty)
         case .text:
-            if os == .macOS, image == nil {
-                print("Created macOS bundle skeleton at \(outcome.path).")
-                print("Note: no IPSW given. Pass --image foo.ipsw to drive the full install,")
-                print("or use `vm4a pull` to populate from a pre-installed bundle.")
-            } else if os == .macOS {
+            if os == .macOS {
                 print("Installed macOS into \(outcome.path).")
                 print("First boot lands at Setup Assistant — complete it in VM4A.app, then")
                 print("enable Remote Login (Settings → General → Sharing) for SSH access.")
@@ -742,7 +763,8 @@ struct AgentPingCommand: ParsableCommand {
 struct RunWorkerCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "_run-worker",
-        abstract: "Internal worker command"
+        abstract: "Internal worker command",
+        shouldDisplay: false
     )
 
     @Argument(help: "Path to VM root directory")

@@ -66,13 +66,15 @@ public func resolveImage(
 ) async throws -> URL {
     let raw = spec?.trimmingCharacters(in: .whitespaces)
 
-    // Implicit macOS-latest when --image is omitted for a macOS create.
+    // Sensible default when --image is omitted: macOS → Apple's latest IPSW;
+    // Linux → the curated default distro, so `create <name>` needs no flags.
     if raw == nil || raw?.isEmpty == true {
         switch os {
         case .macOS:
             return try await resolveMacOSLatest(progress: progress)
         case .linux:
-            throw VM4AError.message("Linux create requires --image (a catalog id, a local ISO path, or an https URL). See `vm4a image list`.")
+            progress?("No --image given; defaulting to \(defaultLinuxImageID). Use `vm4a image list` to pick another.")
+            return try await resolveImage(spec: defaultLinuxImageID, os: .linux, progress: progress)
         }
     }
     let s = raw!
