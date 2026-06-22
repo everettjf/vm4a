@@ -85,7 +85,7 @@ All surfaces share the same agent primitives: `spawn`, `run-code`, `expose-port`
 ```bash
 brew tap everettjf/tap
 brew install vm4a              # CLI
-brew install --cask vm4a       # GUI (drag-install)
+brew install --cask vm4a-app   # GUI (drag-install)
 ```
 
 <details>

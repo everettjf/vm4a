@@ -34,7 +34,7 @@ description: "安装 vm4a、确认能跑起来、启动第一台 VM。"
 ```bash
 brew tap everettjf/tap
 brew install vm4a              # CLI
-brew install --cask vm4a       # 可选的 GUI app
+brew install --cask vm4a-app   # 可选的 GUI app
 ```
 
 ### 从源码构建

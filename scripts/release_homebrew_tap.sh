@@ -222,8 +222,14 @@ echo "Cloning tap repo $TAP_REPO ..."
 git clone "https://github.com/$TAP_REPO.git" "$TAP_DIR"
 
 FORMULA_PATH="$TAP_DIR/Formula/vm4a.rb"
-CASK_PATH="$TAP_DIR/Casks/vm4a.rb"
+# The app cask uses a distinct token (vm4a-app) so it does not collide with the
+# CLI formula (vm4a). A formula and a same-named installed cask make Homebrew
+# skip linking the formula's binary ("cask is installed, skipping link"), which
+# silently leaves `vm4a` off PATH after `brew upgrade`.
+CASK_PATH="$TAP_DIR/Casks/vm4a-app.rb"
 mkdir -p "$TAP_DIR/Formula" "$TAP_DIR/Casks"
+# Remove the legacy same-token cask if a previous release left one behind.
+rm -f "$TAP_DIR/Casks/vm4a.rb"
 
 if [[ "$PUBLISH_CLI" -eq 1 ]]; then
   cat > "$FORMULA_PATH" <<FORMULA
@@ -264,7 +270,7 @@ fi
 
 if [[ "$PUBLISH_APP" -eq 1 ]]; then
   cat > "$CASK_PATH" <<CASK
-cask "vm4a" do
+cask "vm4a-app" do
   version "$VERSION"
   sha256 "$APP_SHA"
 

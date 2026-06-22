@@ -85,7 +85,7 @@ vm4a exec /tmp/vm4a/task-42 -- bash /work/agent_step.sh
 ```bash
 brew tap everettjf/tap
 brew install vm4a              # CLI
-brew install --cask vm4a       # GUI（拖拽安装）
+brew install --cask vm4a-app   # GUI（拖拽安装）
 ```
 
 <details>

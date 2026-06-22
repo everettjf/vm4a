@@ -33,7 +33,7 @@ Install `vm4a`, make sure it actually runs, and understand the moving parts befo
 ```bash
 brew tap everettjf/tap
 brew install vm4a              # the CLI
-brew install --cask vm4a       # optional GUI app
+brew install --cask vm4a-app   # optional GUI app
 ```
 
 ### Build from source
