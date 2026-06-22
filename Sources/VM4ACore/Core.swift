@@ -111,8 +111,11 @@ public struct LinuxImageCatalogEntry: Codable, Sendable {
 /// with zero extra flags. Must match an `id` in `linuxImageCatalog()`.
 public let defaultLinuxImageID = "ubuntu-24.04-arm64"
 
-/// A friendly auto-generated VM name (`vm-XXXXXX`) for when the user omits the
-/// name argument. Short random suffix keeps repeated invocations from colliding.
+/// A friendly auto-generated VM *name* (`vm-XXXXXX`) for when the user omits the
+/// name argument. Intentionally distinct from `vmShortID(forPath:)`: that derives
+/// a deterministic id from an existing bundle path, whereas here no path exists
+/// yet — we need a fresh random name. Short random suffix keeps repeated
+/// invocations from colliding.
 public func generatedVMName() -> String {
     let suffix = UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(6).lowercased()
     return "vm-\(suffix)"

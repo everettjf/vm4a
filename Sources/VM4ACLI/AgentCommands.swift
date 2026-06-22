@@ -51,7 +51,7 @@ struct SpawnCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Pull this OCI reference if bundle does not yet exist")
     var from: String?
 
-    @Option(name: .long, help: "Image spec: catalog id (see `vm4a image list`), local file path, or https:// URL. Omit to use a sensible default (Linux → \(defaultLinuxImageID); macOS → latest IPSW).")
+    @Option(name: .long, help: ArgumentHelp(imageOptionHelp))
     var image: String?
 
     @Option(name: .long, help: "vCPU count")
@@ -141,7 +141,8 @@ struct SpawnCommand: AsyncParsableCommand {
             sshKey: sshKey,
             hostOverride: host,
             waitTimeout: TimeInterval(waitTimeout),
-            allowDomains: parseCommaList(allowDomains)
+            allowDomains: parseCommaList(allowDomains),
+            allowDefaultImage: true
         )
         let outcome = try await runSpawn(
             options: options,

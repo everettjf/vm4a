@@ -16,6 +16,10 @@ enum OutputFormat: String, ExpressibleByArgument {
     case json
 }
 
+/// Shared `--image` help text for `create` and `spawn` so the two stay in sync
+/// when the default distro or wording changes.
+let imageOptionHelp = "Image spec: catalog id (see `vm4a image list`), local file path, or https:// URL. Omit to use a sensible default (Linux → \(defaultLinuxImageID); macOS → latest IPSW)."
+
 func writeJSONLine<T: Encodable>(_ value: T, pretty: Bool = false) throws {
     let encoder = JSONEncoder()
     var formatting: JSONEncoder.OutputFormatting = [.sortedKeys]
@@ -121,7 +125,7 @@ struct CreateCommand: AsyncParsableCommand {
     @Option(name: .long, help: "Parent directory to store VM bundles")
     var storage: String = FileManager.default.currentDirectoryPath
 
-    @Option(name: .long, help: "Image spec: catalog id (see `vm4a image list`), local file path, or https:// URL. Omit to use a sensible default (Linux → \(defaultLinuxImageID); macOS → latest IPSW).")
+    @Option(name: .long, help: ArgumentHelp(imageOptionHelp))
     var image: String?
 
     @Option(name: .long, help: "vCPU count")

@@ -68,16 +68,19 @@ public func resolveImage(
 
     // Sensible default when --image is omitted: macOS → Apple's latest IPSW;
     // Linux → the curated default distro, so `create <name>` needs no flags.
-    if raw == nil || raw?.isEmpty == true {
+    // The Linux default flows through the normal catalog lookup below.
+    let s: String
+    if let raw, !raw.isEmpty {
+        s = raw
+    } else {
         switch os {
         case .macOS:
             return try await resolveMacOSLatest(progress: progress)
         case .linux:
             progress?("No --image given; defaulting to \(defaultLinuxImageID). Use `vm4a image list` to pick another.")
-            return try await resolveImage(spec: defaultLinuxImageID, os: .linux, progress: progress)
+            s = defaultLinuxImageID
         }
     }
-    let s = raw!
 
     // 1. Local path that exists?
     let normalized = normalizePath(s)
